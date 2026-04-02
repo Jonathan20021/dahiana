@@ -2,10 +2,10 @@
 session_start();
 
 // Database configuration
-define('DB_HOST', '127.0.0.1');
-define('DB_USER', 'root'); // Assuming XAMPP default
-define('DB_PASS', '');     // Assuming XAMPP default
-define('DB_NAME', 'dahiana_db');
+define('DB_HOST', '129.121.81.172');
+define('DB_USER', 'neetjbte_dahiana');
+define('DB_PASS', 'Dahiana*2026');
+define('DB_NAME', 'neetjbte_dahiana');
 
 try {
     $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
