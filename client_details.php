@@ -171,7 +171,7 @@ function getActivityIcon($kind) {
 $frequencies = ['mensual' => 'Mensual', 'quincenal' => 'Quincenal', 'semanal' => 'Semanal', 'bimestral' => 'Bimestral', 'trimestral' => 'Trimestral', 'semestral' => 'Semestral', 'anual' => 'Anual'];
 
 $page_title = $client['name'];
-$page_subtitle = ($client['business_name'] ?: 'Cliente') . ($client['rnc'] ? ' &middot; RNC ' . htmlspecialchars($client['rnc']) : '');
+$page_subtitle = ($client['business_name'] ?: 'Cliente') . ($client['rnc'] ? ' · RNC ' . $client['rnc'] : '');
 $page_actions = '
 <a href="admin_clients.php" class="btn-soft text-sm">
     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>

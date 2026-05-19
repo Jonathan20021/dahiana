@@ -67,7 +67,53 @@ if (isset($_GET['export']) && $selectedClient > 0) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'create_filing') {
+    if ($action === 'edit_filing') {
+        $fid = (int)($_POST['filing_id'] ?? 0);
+        $notes = trim($_POST['notes'] ?? '');
+        $newStatus = $_POST['status'] ?? 'borrador';
+        if (!in_array($newStatus, ['borrador','enviado'], true)) $newStatus = 'borrador';
+
+        if ($fid > 0) {
+            if ($newStatus === 'enviado') {
+                $pdo->prepare("UPDATE tax_filings SET notes=?, status='enviado', sent_at = COALESCE(sent_at, NOW()) WHERE id=?")
+                    ->execute([$notes, $fid]);
+            } else {
+                $pdo->prepare("UPDATE tax_filings SET notes=?, status='borrador', sent_at = NULL WHERE id=?")
+                    ->execute([$notes, $fid]);
+            }
+            // Sync obligation status when filing is enviado
+            $info = $pdo->prepare("SELECT client_id, filing_type, period FROM tax_filings WHERE id=?");
+            $info->execute([$fid]);
+            if ($i = $info->fetch()) {
+                if ($newStatus === 'enviado') {
+                    $pdo->prepare("UPDATE tax_obligations SET status='completado', completed_at=NOW() WHERE client_id=? AND obligation_type=? AND period=?")
+                        ->execute([$i['client_id'], $i['filing_type'], $i['period']]);
+                    logClientActivity($i['client_id'], 'tax', "Formulario {$i['filing_type']} de {$i['period']} marcado como enviado");
+                } else {
+                    // Reopen related obligation
+                    $pdo->prepare("UPDATE tax_obligations SET status='pendiente', completed_at=NULL WHERE client_id=? AND obligation_type=? AND period=? AND status='completado'")
+                        ->execute([$i['client_id'], $i['filing_type'], $i['period']]);
+                }
+            }
+            $success = "Formulario actualizado.";
+        }
+    } elseif ($action === 'delete_filing') {
+        $fid = (int)($_POST['filing_id'] ?? 0);
+        if ($fid > 0) {
+            $info = $pdo->prepare("SELECT client_id, filing_type, period FROM tax_filings WHERE id=?");
+            $info->execute([$fid]);
+            $i = $info->fetch();
+            $pdo->prepare("DELETE FROM tax_filing_rows WHERE filing_id=?")->execute([$fid]);
+            $pdo->prepare("DELETE FROM tax_filings WHERE id=?")->execute([$fid]);
+            if ($i) logClientActivity($i['client_id'], 'tax', "Formulario {$i['filing_type']} de {$i['period']} eliminado");
+            $success = "Formulario eliminado.";
+            // If we were viewing this filing's detail, drop client_id from URL
+            if ($selectedClient > 0) {
+                header("Location: admin_tax_filings.php?type={$type}&period={$period}");
+                exit;
+            }
+        }
+    } elseif ($action === 'create_filing') {
         $cid = (int)($_POST['client_id'] ?? 0);
         if ($cid > 0) {
             try {
@@ -213,7 +259,7 @@ $allClients = $pdo->query("
 ")->fetchAll();
 
 $page_title = "Formulario {$type}";
-$page_subtitle = $typeLabels[$type]['title'] . ' &middot; ' . $periodLabel;
+$page_subtitle = $typeLabels[$type]['title'] . ' · ' . $periodLabel;
 include 'components/layout_start.php';
 ?>
 
@@ -458,6 +504,18 @@ include 'components/layout_start.php';
                     <?php else: ?>
                     <span class="badge-dot badge-amber">Borrador</span>
                     <?php endif; ?>
+                    <button type="button"
+                            onclick="openEditFiling(<?= $f['id'] ?>, '<?= htmlspecialchars(addslashes($f['client_name']), ENT_QUOTES) ?>', '<?= htmlspecialchars($f['status'], ENT_QUOTES) ?>', <?= json_encode($f['notes'] ?? '') ?>)"
+                            class="icon-btn !w-8 !h-8 hover:!bg-blue-100 hover:!text-blue-700" title="Editar">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </button>
+                    <form method="POST" class="inline" onsubmit="return confirm('Eliminar este formulario y todas sus lineas? Esta accion no se puede deshacer.')">
+                        <input type="hidden" name="action" value="delete_filing">
+                        <input type="hidden" name="filing_id" value="<?= $f['id'] ?>">
+                        <button type="submit" class="icon-btn !w-8 !h-8 hover:!bg-red-100 hover:!text-red-700" title="Eliminar">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
+                        </button>
+                    </form>
                     <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $f['client_id'] ?>" class="btn-dark !text-xs !py-1.5 !px-3">Abrir</a>
                 </div>
             </div>
@@ -466,6 +524,55 @@ include 'components/layout_start.php';
     </ul>
     <?php endif; ?>
 </div>
+
+<!-- Edit filing modal -->
+<div id="editFilingModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 modal-backdrop" onclick="closeEditFiling()"></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-3xl bg-white shadow-2xl">
+            <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-slate-900">Editar formulario</h3>
+                    <p id="editFilingClientName" class="text-xs text-slate-500 mt-0.5"></p>
+                </div>
+                <button type="button" onclick="closeEditFiling()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+            </div>
+            <form method="POST" class="p-6 space-y-4">
+                <input type="hidden" name="action" value="edit_filing">
+                <input type="hidden" name="filing_id" id="editFilingId" value="">
+                <div>
+                    <label class="field-label">Estado</label>
+                    <select name="status" id="editFilingStatus" class="field text-sm">
+                        <option value="borrador">Borrador</option>
+                        <option value="enviado">Enviado a DGII</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-slate-400">Al marcar como enviado, la obligacion DGII vinculada se completa automaticamente.</p>
+                </div>
+                <div>
+                    <label class="field-label">Notas internas</label>
+                    <textarea name="notes" id="editFilingNotes" rows="4" class="field text-sm" placeholder="Comentarios, referencias, numero de declaracion..."></textarea>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeEditFiling()" class="btn-soft text-sm">Cancelar</button>
+                    <button type="submit" class="btn-dark text-sm">Guardar cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openEditFiling(id, clientName, status, notes) {
+    document.getElementById('editFilingId').value = id;
+    document.getElementById('editFilingClientName').textContent = clientName;
+    document.getElementById('editFilingStatus').value = status;
+    document.getElementById('editFilingNotes').value = notes || '';
+    document.getElementById('editFilingModal').classList.remove('hidden');
+}
+function closeEditFiling() {
+    document.getElementById('editFilingModal').classList.add('hidden');
+}
+</script>
 
 <!-- Add filing -->
 <div class="surface-card p-5">
