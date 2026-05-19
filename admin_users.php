@@ -85,226 +85,187 @@ $users = $pdo->query("
 $adminCount = 0;
 $clientCount = 0;
 foreach ($users as $user) {
-    if ($user['access_level'] === 'admin') {
-        $adminCount++;
-    } else {
-        $clientCount++;
-    }
+    if ($user['access_level'] === 'admin') $adminCount++;
+    else $clientCount++;
 }
+
+$page_title = 'Usuarios';
+$page_subtitle = 'Crea usuarios, asigna roles y controla los accesos al portal.';
+$page_actions = '<button type="button" onclick="openModal(\'createUserModal\')"
+    class="inline-flex items-center gap-2 btn-dark text-sm">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    Nuevo usuario
+</button>';
+include 'components/layout_start.php';
 ?>
-<!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-50/50">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Usuarios - Portal Asesoria</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Outfit', sans-serif; }
-    </style>
-</head>
-<body class="h-full">
-    <?php include 'components/header.php'; ?>
-    <?php include 'components/sidebar.php'; ?>
 
-    <main class="lg:pl-72 py-8">
-        <div class="px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-            <div class="sm:flex sm:items-center sm:justify-between mb-8">
-                <div>
-                    <h1 class="text-3xl font-bold tracking-tight text-slate-900">Usuarios</h1>
-                    <p class="mt-1 text-sm text-slate-500">Crea usuarios, asigna roles y controla quien entra al panel administrativo o al panel cliente.</p>
+<?php if ($success): ?>
+<div class="mb-4 rounded-2xl bg-emerald-50 px-4 py-3 border border-emerald-100 text-sm font-medium text-emerald-800"><?= htmlspecialchars($success) ?></div>
+<?php endif; ?>
+<?php if ($error): ?>
+<div class="mb-4 rounded-2xl bg-red-50 px-4 py-3 border border-red-100 text-sm font-medium text-red-700"><?= htmlspecialchars($error) ?></div>
+<?php endif; ?>
+
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+    <div class="stat-card p-5">
+        <p class="text-sm text-slate-500">Total usuarios</p>
+        <p class="mt-1 text-3xl font-extrabold tracking-tight text-slate-900"><?= count($users) ?></p>
+        <p class="mt-1 text-[11px] text-slate-400">Activos en el sistema</p>
+    </div>
+    <div class="stat-card p-5">
+        <p class="text-sm text-slate-500">Panel administrativo</p>
+        <p class="mt-1 text-3xl font-extrabold tracking-tight text-slate-900"><?= $adminCount ?></p>
+        <p class="mt-1 text-[11px] text-slate-400">Gestores del portal</p>
+    </div>
+    <div class="stat-card p-5">
+        <p class="text-sm text-slate-500">Panel cliente</p>
+        <p class="mt-1 text-3xl font-extrabold tracking-tight text-slate-900"><?= $clientCount ?></p>
+        <p class="mt-1 text-[11px] text-slate-400">Acceso lectura</p>
+    </div>
+</div>
+
+<div class="surface-card overflow-hidden">
+    <div class="px-6 py-5 border-b border-stone-100">
+        <h3 class="text-base font-bold text-slate-900">Directorio de usuarios</h3>
+    </div>
+    <ul class="divide-y divide-stone-100">
+        <?php foreach ($users as $user): ?>
+        <li class="px-6 py-4 hover:bg-stone-50/60 transition-colors">
+            <div class="flex flex-col lg:flex-row lg:items-center gap-4">
+                <div class="flex items-center gap-3 lg:flex-1 min-w-0">
+                    <div class="h-11 w-11 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center text-sm font-bold text-slate-700 shrink-0">
+                        <?= htmlspecialchars(substr(strtoupper($user['name']), 0, 1)) ?>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-semibold text-slate-900 truncate"><?= htmlspecialchars($user['name']) ?></p>
+                        <p class="text-xs text-slate-500 truncate"><?= htmlspecialchars($user['email']) ?></p>
+                        <p class="text-[11px] text-slate-400 truncate"><?= htmlspecialchars($user['phone'] ?: 'Sin telefono') ?></p>
+                    </div>
                 </div>
-                <button type="button" onclick="openModal('createUserModal')" class="mt-4 sm:mt-0 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 transition-all hover:-translate-y-0.5">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                    Nuevo usuario
-                </button>
+                <div class="flex items-center gap-3 lg:gap-5">
+                    <div class="text-xs">
+                        <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Rol</p>
+                        <p class="font-medium text-slate-700"><?= htmlspecialchars($user['role_name']) ?></p>
+                    </div>
+                    <span class="badge-dot <?= $user['access_level'] === 'admin' ? 'badge-blue' : 'badge-green' ?>">
+                        <?= $user['access_level'] === 'admin' ? 'Admin' : 'Cliente' ?>
+                    </span>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button type="button" onclick="openModal('editUserModal<?= $user['id'] ?>')" class="btn-soft text-xs">Editar</button>
+                    <?php if ((int) $user['id'] !== (int) $_SESSION['user_id']): ?>
+                    <form action="admin_users.php" method="POST" onsubmit="return confirm('Eliminar este usuario?')">
+                        <input type="hidden" name="action" value="delete_user">
+                        <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
+                        <button type="submit" class="rounded-2xl bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors">Eliminar</button>
+                    </form>
+                    <?php endif; ?>
+                </div>
             </div>
+        </li>
+        <?php endforeach; ?>
+    </ul>
+</div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
-                <div class="rounded-3xl bg-white px-6 py-5 shadow-sm border border-slate-100">
-                    <p class="text-sm text-slate-500">Total usuarios</p>
-                    <p class="mt-2 text-3xl font-semibold text-slate-900"><?= count($users) ?></p>
-                </div>
-                <div class="rounded-3xl bg-white px-6 py-5 shadow-sm border border-slate-100">
-                    <p class="text-sm text-slate-500">Acceso admin</p>
-                    <p class="mt-2 text-3xl font-semibold text-slate-900"><?= $adminCount ?></p>
-                </div>
-                <div class="rounded-3xl bg-white px-6 py-5 shadow-sm border border-slate-100">
-                    <p class="text-sm text-slate-500">Acceso cliente</p>
-                    <p class="mt-2 text-3xl font-semibold text-slate-900"><?= $clientCount ?></p>
-                </div>
+<!-- Create modal -->
+<div id="createUserModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 modal-backdrop" onclick="closeModal('createUserModal')"></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+        <div class="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
+            <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+                <h3 class="text-base font-bold text-slate-900">Crear usuario</h3>
+                <button type="button" onclick="closeModal('createUserModal')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-
-            <?php if ($success): ?>
-            <div class="mb-6 rounded-2xl bg-green-50 p-4 border border-green-100 text-sm font-medium text-green-800"><?= htmlspecialchars($success) ?></div>
-            <?php endif; ?>
-            <?php if ($error): ?>
-            <div class="mb-6 rounded-2xl bg-red-50 p-4 border border-red-100 text-sm font-medium text-red-800"><?= htmlspecialchars($error) ?></div>
-            <?php endif; ?>
-
-            <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/60">
-                    <h2 class="text-base font-semibold text-slate-900">Directorio de usuarios</h2>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-slate-100">
-                        <thead class="bg-white">
-                            <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                <th class="px-6 py-4">Usuario</th>
-                                <th class="px-6 py-4">Rol</th>
-                                <th class="px-6 py-4">Acceso</th>
-                                <th class="px-6 py-4">Registro</th>
-                                <th class="px-6 py-4 text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <?php foreach ($users as $user): ?>
-                            <tr class="hover:bg-slate-50/80 transition-colors">
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center gap-4">
-                                        <div class="h-11 w-11 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-sm font-bold text-slate-600">
-                                            <?= htmlspecialchars(substr(strtoupper($user['name']), 0, 1)) ?>
-                                        </div>
-                                        <div>
-                                            <p class="text-sm font-semibold text-slate-900"><?= htmlspecialchars($user['name']) ?></p>
-                                            <p class="text-xs text-slate-500"><?= htmlspecialchars($user['email']) ?></p>
-                                            <p class="text-xs text-slate-400"><?= htmlspecialchars($user['phone'] ?: 'Sin telefono') ?></p>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-sm text-slate-700"><?= htmlspecialchars($user['role_name']) ?></td>
-                                <td class="px-6 py-4">
-                                    <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold <?= $user['access_level'] === 'admin' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700' ?>">
-                                        <?= $user['access_level'] === 'admin' ? 'Panel admin' : 'Panel cliente' ?>
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-sm text-slate-500"><?= date('d/m/Y', strtotime($user['created_at'])) ?></td>
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center justify-end gap-2">
-                                        <button type="button" onclick="openModal('editUserModal<?= $user['id'] ?>')" class="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-50">Editar</button>
-                                        <?php if ((int) $user['id'] !== (int) $_SESSION['user_id']): ?>
-                                        <form action="admin_users.php" method="POST" onsubmit="return confirm('Se eliminara este usuario. Continuar?')">
-                                            <input type="hidden" name="action" value="delete_user">
-                                            <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
-                                            <button type="submit" class="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">Eliminar</button>
-                                        </form>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
+            <form action="admin_users.php" method="POST" class="p-6 space-y-4">
+                <input type="hidden" name="action" value="add_user">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="field-label">Nombre</label>
+                        <input type="text" name="name" required class="field">
+                    </div>
+                    <div>
+                        <label class="field-label">Correo</label>
+                        <input type="email" name="email" required class="field">
+                    </div>
+                    <div>
+                        <label class="field-label">Telefono</label>
+                        <input type="text" name="phone" class="field">
+                    </div>
+                    <div>
+                        <label class="field-label">Rol</label>
+                        <select name="role" required class="field">
+                            <?php foreach ($roles as $role): ?>
+                            <option value="<?= htmlspecialchars($role['slug']) ?>"><?= htmlspecialchars($role['name']) ?> (<?= htmlspecialchars($role['access_level']) ?>)</option>
                             <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                        </select>
+                    </div>
                 </div>
-            </div>
-        </div>
-    </main>
-
-    <div id="createUserModal" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-slate-900/50" onclick="closeModal('createUserModal')"></div>
-        <div class="relative flex min-h-full items-center justify-center p-4">
-            <div class="w-full max-w-2xl rounded-3xl bg-white shadow-xl border border-slate-100">
-                <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                    <h3 class="text-lg font-semibold text-slate-900">Crear usuario</h3>
-                    <button type="button" onclick="closeModal('createUserModal')" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+                <div>
+                    <label class="field-label">Contrasena inicial</label>
+                    <input type="password" name="password" required class="field">
                 </div>
-                <form action="admin_users.php" method="POST" class="p-6 space-y-4">
-                    <input type="hidden" name="action" value="add_user">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Nombre</label>
-                            <input type="text" name="name" required class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Correo</label>
-                            <input type="email" name="email" required class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Telefono</label>
-                            <input type="text" name="phone" class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Rol</label>
-                            <select name="role" required class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                                <?php foreach ($roles as $role): ?>
-                                <option value="<?= htmlspecialchars($role['slug']) ?>"><?= htmlspecialchars($role['name']) ?> (<?= htmlspecialchars($role['access_level']) ?>)</option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-2">Contrasena inicial</label>
-                        <input type="password" name="password" required class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                    </div>
-                    <div class="flex justify-end gap-3 pt-2">
-                        <button type="button" onclick="closeModal('createUserModal')" class="rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-50">Cancelar</button>
-                        <button type="submit" class="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Crear usuario</button>
-                    </div>
-                </form>
-            </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="closeModal('createUserModal')" class="btn-soft text-sm">Cancelar</button>
+                    <button type="submit" class="btn-dark text-sm">Crear usuario</button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
 
-    <?php foreach ($users as $user): ?>
-    <div id="editUserModal<?= $user['id'] ?>" class="fixed inset-0 z-50 hidden">
-        <div class="absolute inset-0 bg-slate-900/50" onclick="closeModal('editUserModal<?= $user['id'] ?>')"></div>
-        <div class="relative flex min-h-full items-center justify-center p-4">
-            <div class="w-full max-w-2xl rounded-3xl bg-white shadow-xl border border-slate-100">
-                <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                    <h3 class="text-lg font-semibold text-slate-900">Editar usuario</h3>
-                    <button type="button" onclick="closeModal('editUserModal<?= $user['id'] ?>')" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
-                </div>
-                <form action="admin_users.php" method="POST" class="p-6 space-y-4">
-                    <input type="hidden" name="action" value="edit_user">
-                    <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Nombre</label>
-                            <input type="text" name="name" value="<?= htmlspecialchars($user['name']) ?>" required class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Correo</label>
-                            <input type="email" name="email" value="<?= htmlspecialchars($user['email']) ?>" required class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Telefono</label>
-                            <input type="text" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-2">Rol</label>
-                            <select name="role" required class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                                <?php foreach ($rolesBySlug as $roleSlug => $role): ?>
-                                <option value="<?= htmlspecialchars($roleSlug) ?>" <?= $roleSlug === $user['role'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($role['name']) ?> (<?= htmlspecialchars($role['access_level']) ?>)
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+<?php foreach ($users as $user): ?>
+<div id="editUserModal<?= $user['id'] ?>" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 modal-backdrop" onclick="closeModal('editUserModal<?= $user['id'] ?>')"></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+        <div class="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
+            <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+                <h3 class="text-base font-bold text-slate-900">Editar usuario</h3>
+                <button type="button" onclick="closeModal('editUserModal<?= $user['id'] ?>')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+            </div>
+            <form action="admin_users.php" method="POST" class="p-6 space-y-4">
+                <input type="hidden" name="action" value="edit_user">
+                <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="field-label">Nombre</label>
+                        <input type="text" name="name" value="<?= htmlspecialchars($user['name']) ?>" required class="field">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-2">Nueva contrasena</label>
-                        <input type="password" name="password" class="w-full rounded-2xl border-slate-200 focus:border-blue-500 focus:ring-blue-500">
-                        <p class="mt-1 text-xs text-slate-400">Dejalo vacio para mantener la actual.</p>
+                        <label class="field-label">Correo</label>
+                        <input type="email" name="email" value="<?= htmlspecialchars($user['email']) ?>" required class="field">
                     </div>
-                    <div class="flex justify-end gap-3 pt-2">
-                        <button type="button" onclick="closeModal('editUserModal<?= $user['id'] ?>')" class="rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-50">Cancelar</button>
-                        <button type="submit" class="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Guardar cambios</button>
+                    <div>
+                        <label class="field-label">Telefono</label>
+                        <input type="text" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" class="field">
                     </div>
-                </form>
-            </div>
+                    <div>
+                        <label class="field-label">Rol</label>
+                        <select name="role" required class="field">
+                            <?php foreach ($rolesBySlug as $roleSlug => $role): ?>
+                            <option value="<?= htmlspecialchars($roleSlug) ?>" <?= $roleSlug === $user['role'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($role['name']) ?> (<?= htmlspecialchars($role['access_level']) ?>)
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="field-label">Nueva contrasena</label>
+                    <input type="password" name="password" class="field" placeholder="Deja vacio para mantener la actual">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="closeModal('editUserModal<?= $user['id'] ?>')" class="btn-soft text-sm">Cancelar</button>
+                    <button type="submit" class="btn-dark text-sm">Guardar cambios</button>
+                </div>
+            </form>
         </div>
     </div>
-    <?php endforeach; ?>
+</div>
+<?php endforeach; ?>
 
-    <script>
-        function openModal(id) {
-            document.getElementById(id).classList.remove('hidden');
-        }
+<script>
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+</script>
 
-        function closeModal(id) {
-            document.getElementById(id).classList.add('hidden');
-        }
-    </script>
-</body>
-</html>
+<?php include 'components/layout_end.php'; ?>

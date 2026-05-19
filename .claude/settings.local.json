@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\config.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\components\\\\layout_start.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\components\\\\layout_end.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\components\\\\sidebar.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_clients.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_requests.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_finances.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_services.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_users.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_roles.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_dashboard.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\client_details.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_tax_calendar.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_tax_filings.php\")"
+    ]
+  }
+}

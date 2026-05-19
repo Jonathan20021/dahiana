@@ -8,7 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $email = $_POST['email'] ?? '';
     $phone = $_POST['phone'] ?? '';
     $password = $_POST['password'] ?? '';
-    
+
     if ($name && $email && $password) {
         $hash = password_hash($password, PASSWORD_DEFAULT);
         $stmt = $pdo->prepare("INSERT INTO users (name, email, phone, role, password_hash) VALUES (?, ?, ?, 'client', ?)");
@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Fetch 360 Metrics
+// 360 Metrics
 $totalClients = $pdo->query("
     SELECT COUNT(*)
     FROM users u
@@ -32,7 +32,7 @@ $pendingRequests = $pdo->query("SELECT COUNT(*) FROM requests WHERE status='pend
 $inProcessRequests = $pdo->query("SELECT COUNT(*) FROM requests WHERE status='en_proceso'")->fetchColumn();
 $completedRequests = $pdo->query("SELECT COUNT(*) FROM requests WHERE status='completado' OR status='presentado'")->fetchColumn();
 
-// Data for Status Distribution Chart
+// Status distribution
 $statusCounts = $pdo->query("SELECT status, COUNT(*) as count FROM requests GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
 $allStatuses = ['pendiente', 'en_proceso', 'en_revision', 'presentado', 'completado'];
 $chartStatusData = [];
@@ -40,14 +40,14 @@ foreach ($allStatuses as $s) {
     $chartStatusData[] = $statusCounts[$s] ?? 0;
 }
 
-// Data for Client Growth Chart (Last 6 months)
+// Client growth chart (6 months)
 $growthData = $pdo->query("
     SELECT DATE_FORMAT(u.created_at, '%Y-%m') as month, COUNT(*) as count
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
       AND u.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-    GROUP BY month 
+    GROUP BY month
     ORDER BY month ASC
 ")->fetchAll(PDO::FETCH_KEY_PAIR);
 
@@ -59,289 +59,380 @@ for ($i = 5; $i >= 0; $i--) {
     $chartGrowthValues[] = $growthData[$m] ?? 0;
 }
 
-// Fetch all client-side users
+// Recent activity feed: latest requests
+$recentActivity = $pdo->query("
+    SELECT r.id, r.status, r.created_at, s.title as service_title, u.name as client_name
+    FROM requests r
+    JOIN services s ON r.service_id = s.id
+    JOIN users u ON r.client_id = u.id
+    ORDER BY r.created_at DESC
+    LIMIT 6
+")->fetchAll();
+
+// Update overdue DGII obligations
+$pdo->exec("UPDATE tax_obligations SET status='vencido' WHERE status='pendiente' AND due_date < CURDATE()");
+
+// DGII alerts
+$alertCounts = $pdo->query("
+    SELECT
+        SUM(CASE WHEN status='vencido' THEN 1 ELSE 0 END) AS overdue,
+        SUM(CASE WHEN status='pendiente' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS week,
+        SUM(CASE WHEN status='pendiente' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS month
+    FROM tax_obligations
+")->fetch();
+
+$upcomingObligations = $pdo->query("
+    SELECT o.id, o.obligation_type, o.period, o.due_date, o.status, u.name AS client_name, o.client_id
+    FROM tax_obligations o
+    JOIN users u ON u.id = o.client_id
+    WHERE o.status IN ('pendiente','vencido')
+      AND o.due_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
+    ORDER BY o.due_date ASC
+    LIMIT 8
+")->fetchAll();
+
+// Overdue invoices
+$overdueInvoices = $pdo->query("
+    SELECT COUNT(*) AS c, COALESCE(SUM(amount),0) AS total
+    FROM invoices
+    WHERE status='pendiente' AND due_date < CURDATE()
+")->fetch();
+
+// All clients
 $stmt = $pdo->query("
-    SELECT u.*
+    SELECT u.*,
+           (SELECT COUNT(*) FROM requests WHERE client_id = u.id) as request_count
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
     ORDER BY u.created_at DESC
 ");
 $clients = $stmt->fetchAll();
+
+$firstName = explode(' ', $_SESSION['name'])[0];
+
+$page_title    = 'Hola, ' . $firstName;
+$page_subtitle = 'Tu cartera de clientes y tramites de un vistazo.';
+$page_actions  = '<a href="admin_clients.php" class="btn-soft text-sm">Ver clientes</a>
+<button type="button" onclick="document.getElementById(\'addClientModal\').classList.remove(\'hidden\')"
+    class="btn-dark text-sm">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    Nuevo cliente
+</button>';
+
+include 'components/layout_start.php';
 ?>
-<!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-50/50">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel 360 - Portal Asesoría</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Outfit', sans-serif; }
-    </style>
-</head>
-<body class="h-full">
-    <?php include 'components/header.php'; ?>
-    <?php include 'components/sidebar.php'; ?>
 
-    <main class="lg:pl-72 py-8">
-        <div class="px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-            
-            <div class="sm:flex sm:items-center sm:justify-between mb-8">
-                <div>
-                    <h1 class="text-3xl font-bold tracking-tight text-slate-900">Vista 360</h1>
-                    <p class="mt-1 text-sm text-slate-500">Resumen y administración general de tu cartera de clientes.</p>
-                </div>
-                <div class="mt-4 sm:ml-16 sm:mt-0 sm:flex items-center gap-3">
-                    <a href="admin_users.php" class="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 hover:bg-slate-50 transition-all hover:-translate-y-0.5">
-                        Gestionar usuarios
-                    </a>
-                    <button type="button" onclick="document.getElementById('addClientModal').classList.remove('hidden')" class="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 transition-all hover:-translate-y-0.5">
-                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-                        Nuevo Cliente
-                    </button>
-                </div>
+<?php if (isset($success)): ?>
+<div class="mb-6 rounded-2xl bg-emerald-50 px-4 py-3 border border-emerald-100 text-sm font-medium text-emerald-800"><?= htmlspecialchars($success) ?></div>
+<?php endif; ?>
+<?php if (isset($error)): ?>
+<div class="mb-6 rounded-2xl bg-red-50 px-4 py-3 border border-red-100 text-sm font-medium text-red-700"><?= htmlspecialchars($error) ?></div>
+<?php endif; ?>
+
+<!-- Stats row -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+    <?php
+    $stats = [
+        ['label' => 'Total clientes', 'value' => $totalClients, 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6 5.87v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2m13-10a4 4 0 11-8 0 4 4 0 018 0z"/></svg>', 'tint' => 'bg-blue-50 text-blue-600', 'change' => '+' . max(0, $totalClients) . ' total'],
+        ['label' => 'Pendientes',    'value' => $pendingRequests, 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>', 'tint' => 'bg-red-50 text-red-600', 'change' => 'requieren info'],
+        ['label' => 'En proceso',    'value' => $inProcessRequests, 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>', 'tint' => 'bg-amber-50 text-amber-700', 'change' => 'en trabajo activo'],
+        ['label' => 'Finalizadas',   'value' => $completedRequests, 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>', 'tint' => 'bg-emerald-50 text-emerald-600', 'change' => 'entregadas o presentadas'],
+    ];
+    foreach ($stats as $s):
+    ?>
+    <div class="stat-card p-5">
+        <div class="flex items-start justify-between">
+            <div class="w-10 h-10 rounded-2xl <?= $s['tint'] ?> flex items-center justify-center">
+                <?= $s['icon'] ?>
             </div>
-
-            <!-- Dashboard Stats -->
-            <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-                <div class="relative overflow-hidden rounded-3xl bg-white px-6 py-6 shadow-sm border border-slate-100">
-                    <dt>
-                        <div class="absolute rounded-xl bg-blue-50 p-3">
-                            <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                            </svg>
-                        </div>
-                        <p class="ml-16 truncate text-sm font-medium text-slate-500">Total Clientes</p>
-                    </dt>
-                    <dd class="ml-16 flex items-baseline pb-1 sm:pb-2">
-                        <p class="text-2xl font-semibold text-slate-900"><?= $totalClients ?></p>
-                    </dd>
-                </div>
-                
-                <div class="relative overflow-hidden rounded-3xl bg-white px-6 py-6 shadow-sm border border-slate-100">
-                    <dt>
-                        <div class="absolute rounded-xl bg-red-50 p-3">
-                            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        </div>
-                        <p class="ml-16 truncate text-sm font-medium text-slate-500">Tareas Pendientes</p>
-                    </dt>
-                    <dd class="ml-16 flex items-baseline pb-1 sm:pb-2">
-                        <p class="text-2xl font-semibold text-slate-900"><?= $pendingRequests ?></p>
-                    </dd>
-                </div>
-
-                <div class="relative overflow-hidden rounded-3xl bg-white px-6 py-6 shadow-sm border border-slate-100">
-                    <dt>
-                        <div class="absolute rounded-xl bg-yellow-50 p-3">
-                            <svg class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-                        </div>
-                        <p class="ml-16 truncate text-sm font-medium text-slate-500">En Proceso</p>
-                    </dt>
-                    <dd class="ml-16 flex items-baseline pb-1 sm:pb-2">
-                        <p class="text-2xl font-semibold text-slate-900"><?= $inProcessRequests ?></p>
-                    </dd>
-                </div>
-
-                <div class="relative overflow-hidden rounded-3xl bg-white px-6 py-6 shadow-sm border border-slate-100">
-                    <dt>
-                        <div class="absolute rounded-xl bg-green-50 p-3">
-                            <svg class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                        <p class="ml-16 truncate text-sm font-medium text-slate-500">Presentadas/Completadas</p>
-                    </dt>
-                    <dd class="ml-16 flex items-baseline pb-1 sm:pb-2">
-                        <p class="text-2xl font-semibold text-slate-900"><?= $completedRequests ?></p>
-                    </dd>
-                </div>
-            </dl>
-
-            <?php if (isset($success)): ?>
-            <div class="mb-6 rounded-2xl bg-green-50 p-4 border border-green-100">
-                <div class="flex">
-                    <div class="ml-3">
-                        <p class="text-sm font-medium text-green-800"><?= htmlspecialchars($success) ?></p>
-                    </div>
-                </div>
-            </div>
-            <?php endif; ?>
-            <?php if (isset($error)): ?>
-            <div class="mb-6 rounded-2xl bg-red-50 p-4 border border-red-100">
-                <div class="flex">
-                    <div class="ml-3">
-                        <p class="text-sm font-medium text-red-800"><?= htmlspecialchars($error) ?></p>
-                    </div>
-                </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Charts Section -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <!-- Status Distribution -->
-                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-                    <h3 class="text-base font-semibold text-slate-900 mb-6">Distribución de Solicitudes</h3>
-                    <div class="relative h-64">
-                        <canvas id="statusChart"></canvas>
-                    </div>
-                </div>
-                <!-- Client Growth -->
-                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-                    <h3 class="text-base font-semibold text-slate-900 mb-6">Nuevos Clientes (6 Meses)</h3>
-                    <div class="relative h-64">
-                        <canvas id="growthChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Clients List -->
-            <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-                    <h3 class="text-base font-semibold text-slate-900">Directorio de Clientes</h3>
-                </div>
-                <div class="flow-root">
-                    <ul role="list" class="divide-y divide-slate-100">
-                        <?php foreach ($clients as $client): ?>
-                        <li class="relative flex justify-between gap-x-6 px-6 py-5 hover:bg-slate-50 transition-colors">
-                            <div class="flex min-w-0 gap-x-4 items-center">
-                                <div class="h-12 w-12 flex-none rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center">
-                                    <span class="text-lg font-semibold text-slate-500"><?= substr(strtoupper($client['name']), 0, 1) ?></span>
-                                </div>
-                                <div class="min-w-0 flex-auto">
-                                    <p class="text-sm font-semibold leading-6 text-slate-900">
-                                        <a href="client_details.php?id=<?= $client['id'] ?>">
-                                            <span class="absolute inset-x-0 -top-px bottom-0"></span>
-                                            <?= htmlspecialchars($client['name']) ?>
-                                        </a>
-                                    </p>
-                                    <p class="mt-1 flex text-xs leading-5 text-slate-500 gap-x-2">
-                                        <span><?= htmlspecialchars($client['email']) ?></span>
-                                        <span class="text-slate-300">&bull;</span>
-                                        <span><?= htmlspecialchars($client['phone'] ?: 'Sin Teléfono') ?></span>
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="flex shrink-0 items-center gap-x-4">
-                                <div class="hidden sm:flex sm:flex-col sm:items-end">
-                                    <p class="text-sm leading-6 text-slate-900">Registrado</p>
-                                    <p class="mt-1 text-xs leading-5 text-slate-500">
-                                        <?= date('d/m/Y', strtotime($client['created_at'])) ?>
-                                    </p>
-                                </div>
-                                <svg class="h-5 w-5 flex-none text-slate-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
-                                </svg>
-                            </div>
-                        </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-            </div>
-            
         </div>
-    </main>
+        <p class="mt-4 text-sm text-slate-500"><?= $s['label'] ?></p>
+        <p class="mt-1 text-3xl font-extrabold tracking-tight text-slate-900"><?= $s['value'] ?></p>
+        <p class="mt-1 text-[11px] text-slate-400 font-medium"><?= $s['change'] ?></p>
+    </div>
+    <?php endforeach; ?>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        // Common chart options
-        const chartOptions = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: 'Outfit', size: 12 } } }
-            }
-        };
-
-        // Status Distribution Chart
-        const statusCtx = document.getElementById('statusChart').getContext('2d');
-        new Chart(statusCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Pendiente', 'En Proceso', 'En Revisión', 'Presentado', 'Completado'],
-                datasets: [{
-                    data: <?= json_encode($chartStatusData) ?>,
-                    backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#059669'],
-                    borderWidth: 0,
-                    hoverOffset: 4
-                }]
-            },
-            options: {
-                ...chartOptions,
-                cutout: '70%'
-            }
-        });
-
-        // Client Growth Chart
-        const growthCtx = document.getElementById('growthChart').getContext('2d');
-        new Chart(growthCtx, {
-            type: 'bar',
-            data: {
-                labels: <?= json_encode($chartMonths) ?>,
-                datasets: [{
-                    label: 'Nuevos Clientes',
-                    data: <?= json_encode($chartGrowthValues) ?>,
-                    backgroundColor: '#0f172a',
-                    borderRadius: 8,
-                    maxBarThickness: 30
-                }]
-            },
-            options: {
-                ...chartOptions,
-                plugins: { ...chartOptions.plugins, legend: { display: false } },
-                scales: {
-                    y: { beginAtZero: true, grid: { display: false }, ticks: { stepSize: 1 } },
-                    x: { grid: { display: false } }
-                }
-            }
-        });
-    </script>
-
-    <!-- Modal agregar cliente -->
-    <div id="addClientModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"></div>
-        <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
-            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-                <div class="relative transform overflow-hidden rounded-3xl bg-white text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
-                    <form action="admin_dashboard.php" method="POST">
-                        <input type="hidden" name="action" value="add_client">
-                        <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-                            <div class="sm:flex sm:items-start">
-                                <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                                    <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
-                                    </svg>
-                                </div>
-                                <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                                    <h3 class="text-lg font-semibold leading-6 text-slate-900" id="modal-title">Agregar Nuevo Cliente</h3>
-                                    <div class="mt-6 space-y-4">
-                                        <div>
-                                            <label class="block text-sm font-medium leading-6 text-slate-900">Nombre Completo</label>
-                                            <input type="text" name="name" required class="mt-2 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6">
-                                        </div>
-                                        <div>
-                                            <label class="block text-sm font-medium leading-6 text-slate-900">Correo Electrónico</label>
-                                            <input type="email" name="email" required class="mt-2 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6">
-                                        </div>
-                                        <div>
-                                            <label class="block text-sm font-medium leading-6 text-slate-900">Teléfono (WhatsApp)</label>
-                                            <input type="text" name="phone" placeholder="+18090000000" class="mt-2 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6">
-                                        </div>
-                                        <div>
-                                            <label class="block text-sm font-medium leading-6 text-slate-900">Contraseña Inicial</label>
-                                            <input type="text" name="password" required class="mt-2 block w-full rounded-xl border-0 py-2.5 px-3 text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6">
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="bg-slate-50 px-4 py-4 sm:flex sm:flex-row-reverse sm:px-6 rounded-b-3xl">
-                            <button type="submit" class="inline-flex w-full justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 sm:ml-3 sm:w-auto transition-all">Guardar Cliente</button>
-                            <button type="button" onclick="document.getElementById('addClientModal').classList.add('hidden')" class="mt-3 inline-flex w-full justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 sm:mt-0 sm:w-auto transition-all">Cancelar</button>
-                        </div>
-                    </form>
-                </div>
+<!-- DGII Alerts -->
+<?php
+$hasAlerts = (int)$alertCounts['overdue'] > 0 || (int)$alertCounts['week'] > 0 || (int)$overdueInvoices['c'] > 0;
+if ($hasAlerts):
+?>
+<div class="surface-card p-4 lg:p-5 mb-4 border-amber-200 bg-amber-50/40">
+    <div class="flex items-start gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <h3 class="text-sm font-bold text-amber-900">Alertas DGII y finanzas</h3>
+            <div class="mt-2 flex flex-wrap gap-3 text-xs">
+                <?php if ((int)$alertCounts['overdue'] > 0): ?>
+                <a href="admin_tax_calendar.php?range=overdue" class="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 border border-red-200 hover:border-red-400">
+                    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                    <span class="font-bold text-red-700"><?= (int)$alertCounts['overdue'] ?></span>
+                    <span class="text-slate-700">obligacion(es) vencida(s)</span>
+                </a>
+                <?php endif; ?>
+                <?php if ((int)$alertCounts['week'] > 0): ?>
+                <a href="admin_tax_calendar.php?range=week" class="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 border border-amber-200 hover:border-amber-400">
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span class="font-bold text-amber-700"><?= (int)$alertCounts['week'] ?></span>
+                    <span class="text-slate-700">vencen esta semana</span>
+                </a>
+                <?php endif; ?>
+                <?php if ((int)$overdueInvoices['c'] > 0): ?>
+                <a href="admin_finances.php" class="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 border border-red-200 hover:border-red-400">
+                    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                    <span class="font-bold text-red-700"><?= (int)$overdueInvoices['c'] ?></span>
+                    <span class="text-slate-700">volante(s) vencido(s) - RD$ <?= number_format((float)$overdueInvoices['total'], 0) ?></span>
+                </a>
+                <?php endif; ?>
             </div>
+            <?php if (!empty($upcomingObligations)): ?>
+            <div class="mt-3 pt-3 border-t border-amber-200">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-2">Proximos vencimientos</p>
+                <div class="space-y-1.5">
+                    <?php foreach (array_slice($upcomingObligations, 0, 4) as $ob):
+                        $days = (int)((strtotime($ob['due_date']) - strtotime(date('Y-m-d'))) / 86400);
+                        $dayLabel = $days < 0 ? 'vencido hace ' . abs($days) . 'd' : ($days === 0 ? 'hoy' : "en {$days}d");
+                    ?>
+                    <a href="client_details.php?id=<?= $ob['client_id'] ?>" class="flex items-center gap-2 text-xs hover:bg-amber-100/50 rounded-lg px-2 py-1 -mx-2">
+                        <span class="w-7 text-center text-[9px] font-extrabold text-slate-700 bg-stone-100 rounded px-1"><?= htmlspecialchars(str_replace(['IT-','IR-','ANTICIPO'], ['IT', 'IR', 'AN'], $ob['obligation_type'])) ?></span>
+                        <span class="text-slate-700 truncate flex-1"><?= htmlspecialchars($ob['client_name']) ?></span>
+                        <span class="text-slate-500"><?= htmlspecialchars(formatPeriod($ob['period'])) ?></span>
+                        <span class="font-bold <?= $days < 0 ? 'text-red-600' : ($days <= 3 ? 'text-amber-700' : 'text-slate-600') ?>"><?= $dayLabel ?></span>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+                <a href="admin_tax_calendar.php" class="mt-2 inline-block text-xs font-semibold text-amber-800 hover:text-amber-900">Ver todo el calendario fiscal &rarr;</a>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
-</body>
-</html>
+</div>
+<?php endif; ?>
+
+<!-- Charts row -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+    <div class="surface-card p-6 lg:col-span-2">
+        <div class="flex items-center justify-between mb-1">
+            <div>
+                <h3 class="text-base font-bold text-slate-900">Rendimiento</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Nuevos clientes en los ultimos 6 meses</p>
+            </div>
+            <span class="badge-dot badge-slate">Ultimo semestre</span>
+        </div>
+        <div class="relative h-64 mt-4">
+            <canvas id="growthChart"></canvas>
+        </div>
+    </div>
+
+    <div class="surface-card p-6">
+        <div class="flex items-center justify-between mb-1">
+            <h3 class="text-base font-bold text-slate-900">Estado de tramites</h3>
+        </div>
+        <p class="text-xs text-slate-500">Distribucion actual</p>
+        <div class="relative h-44 mt-4">
+            <canvas id="statusChart"></canvas>
+        </div>
+        <div class="mt-4 grid grid-cols-1 gap-2 text-xs">
+            <?php
+            $statusList = [
+                ['label' => 'Pendiente', 'color' => '#EF4444', 'value' => $chartStatusData[0]],
+                ['label' => 'En proceso', 'color' => '#F59E0B', 'value' => $chartStatusData[1]],
+                ['label' => 'En revision', 'color' => '#3B82F6', 'value' => $chartStatusData[2]],
+                ['label' => 'Presentado', 'color' => '#10B981', 'value' => $chartStatusData[3]],
+                ['label' => 'Completado', 'color' => '#059669', 'value' => $chartStatusData[4]],
+            ];
+            foreach ($statusList as $st): ?>
+            <div class="flex items-center justify-between">
+                <span class="flex items-center gap-2 text-slate-600">
+                    <span class="w-2 h-2 rounded-full" style="background: <?= $st['color'] ?>"></span>
+                    <?= $st['label'] ?>
+                </span>
+                <span class="font-bold text-slate-900"><?= $st['value'] ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+
+<!-- Activity + Clients row -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- Recent activity -->
+    <div class="surface-card p-6 lg:col-span-1">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-bold text-slate-900">Actividad reciente</h3>
+            <a href="admin_requests.php" class="text-xs font-semibold text-blue-600 hover:text-blue-700">Ver todo &rarr;</a>
+        </div>
+        <div class="space-y-4">
+            <?php if (empty($recentActivity)): ?>
+            <p class="text-sm text-slate-400 py-8 text-center">Sin actividad reciente.</p>
+            <?php endif; ?>
+            <?php foreach ($recentActivity as $act):
+                $statusMap = [
+                    'pendiente' => 'badge-red',
+                    'en_proceso' => 'badge-amber',
+                    'en_revision' => 'badge-blue',
+                    'presentado' => 'badge-green',
+                    'completado' => 'badge-green',
+                ];
+                $statusLabel = [
+                    'pendiente' => 'Pendiente',
+                    'en_proceso' => 'En proceso',
+                    'en_revision' => 'En revision',
+                    'presentado' => 'Presentado',
+                    'completado' => 'Completado',
+                ];
+            ?>
+            <a href="request_view.php?id=<?= $act['id'] ?>" class="flex gap-3 group">
+                <div class="w-9 h-9 rounded-full bg-stone-100 flex items-center justify-center text-xs font-bold text-slate-600 shrink-0">
+                    <?= htmlspecialchars(strtoupper(substr($act['client_name'], 0, 1))) ?>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-semibold text-slate-900 truncate group-hover:text-blue-600">
+                        <?= htmlspecialchars($act['client_name']) ?>
+                    </p>
+                    <p class="text-xs text-slate-500 truncate"><?= htmlspecialchars($act['service_title']) ?></p>
+                    <div class="mt-1.5 flex items-center gap-2">
+                        <span class="badge-dot <?= $statusMap[$act['status']] ?? 'badge-slate' ?>"><?= $statusLabel[$act['status']] ?? $act['status'] ?></span>
+                        <span class="text-[11px] text-slate-400"><?= date('d/m', strtotime($act['created_at'])) ?></span>
+                    </div>
+                </div>
+            </a>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- Clients list -->
+    <div class="surface-card overflow-hidden lg:col-span-2">
+        <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-base font-bold text-slate-900">Directorio de clientes</h3>
+                <p class="text-xs text-slate-500 mt-0.5"><?= count($clients) ?> registrados</p>
+            </div>
+            <a href="admin_clients.php" class="text-xs font-semibold text-blue-600 hover:text-blue-700">Ver todos &rarr;</a>
+        </div>
+        <ul class="divide-y divide-stone-100">
+            <?php if (empty($clients)): ?>
+            <li class="px-6 py-10 text-center text-sm text-slate-400">Aun no hay clientes. Agrega el primero usando el boton arriba.</li>
+            <?php endif; ?>
+            <?php foreach (array_slice($clients, 0, 8) as $client): ?>
+            <li>
+                <a href="client_details.php?id=<?= $client['id'] ?>"
+                   class="flex items-center gap-4 px-6 py-4 hover:bg-stone-50/60 transition-colors">
+                    <div class="h-11 w-11 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center text-sm font-bold text-slate-700">
+                        <?= htmlspecialchars(substr(strtoupper($client['name']), 0, 1)) ?>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold text-slate-900 truncate"><?= htmlspecialchars($client['name']) ?></p>
+                        <p class="text-xs text-slate-500 truncate"><?= htmlspecialchars($client['email']) ?></p>
+                    </div>
+                    <div class="hidden sm:flex flex-col items-end gap-1">
+                        <span class="badge-dot badge-slate"><?= (int) $client['request_count'] ?> tramites</span>
+                        <span class="text-[11px] text-slate-400"><?= date('d/m/Y', strtotime($client['created_at'])) ?></span>
+                    </div>
+                    <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                </a>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+</div>
+
+<script>
+const baseChart = {
+    plugins: { legend: { display: false } },
+    responsive: true,
+    maintainAspectRatio: false
+};
+
+// Status doughnut
+new Chart(document.getElementById('statusChart').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Pendiente', 'En proceso', 'En revision', 'Presentado', 'Completado'],
+        datasets: [{
+            data: <?= json_encode($chartStatusData) ?>,
+            backgroundColor: ['#EF4444', '#F59E0B', '#3B82F6', '#10B981', '#059669'],
+            borderWidth: 0,
+            hoverOffset: 6
+        }]
+    },
+    options: { ...baseChart, cutout: '72%' }
+});
+
+// Growth line/area chart
+const growthCtx = document.getElementById('growthChart').getContext('2d');
+const gradient = growthCtx.createLinearGradient(0, 0, 0, 240);
+gradient.addColorStop(0, 'rgba(37, 99, 235, 0.25)');
+gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
+
+new Chart(growthCtx, {
+    type: 'line',
+    data: {
+        labels: <?= json_encode($chartMonths) ?>,
+        datasets: [{
+            label: 'Nuevos clientes',
+            data: <?= json_encode($chartGrowthValues) ?>,
+            borderColor: '#2563EB',
+            backgroundColor: gradient,
+            tension: 0.4,
+            fill: true,
+            pointBackgroundColor: '#fff',
+            pointBorderColor: '#2563EB',
+            pointBorderWidth: 2,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            borderWidth: 3
+        }]
+    },
+    options: {
+        ...baseChart,
+        scales: {
+            y: { beginAtZero: true, grid: { color: '#F1F5F9' }, ticks: { stepSize: 1, color: '#94A3B8', font: { size: 11 } }, border: { display: false } },
+            x: { grid: { display: false }, ticks: { color: '#94A3B8', font: { size: 11 } }, border: { display: false } }
+        }
+    }
+});
+</script>
+
+<!-- Add client modal -->
+<div id="addClientModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 modal-backdrop" onclick="document.getElementById('addClientModal').classList.add('hidden')"></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl">
+            <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+                <h3 class="text-base font-bold text-slate-900">Agregar cliente</h3>
+                <button type="button" onclick="document.getElementById('addClientModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+            </div>
+            <form action="admin_dashboard.php" method="POST" class="p-6 space-y-4">
+                <input type="hidden" name="action" value="add_client">
+                <div>
+                    <label class="field-label">Nombre completo</label>
+                    <input type="text" name="name" required class="field">
+                </div>
+                <div>
+                    <label class="field-label">Correo electronico</label>
+                    <input type="email" name="email" required class="field">
+                </div>
+                <div>
+                    <label class="field-label">Telefono (WhatsApp)</label>
+                    <input type="text" name="phone" placeholder="+18090000000" class="field">
+                </div>
+                <div>
+                    <label class="field-label">Contrasena inicial</label>
+                    <input type="text" name="password" required class="field">
+                </div>
+                <div class="pt-2 flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('addClientModal').classList.add('hidden')" class="btn-soft text-sm">Cancelar</button>
+                    <button type="submit" class="btn-dark text-sm">Guardar cliente</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<?php include 'components/layout_end.php'; ?>

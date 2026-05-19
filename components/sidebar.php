@@ -1,47 +1,120 @@
 <?php
+// components/sidebar.php
 $isAdmin = canAccessArea($_SESSION['role'], 'admin');
 $current_page = basename($_SERVER['PHP_SELF']);
 
-$menuItemsAdmin = [
-    ['url' => 'admin_dashboard.php', 'label' => 'Vista 360', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /></svg>'],
-    ['url' => 'admin_requests.php', 'label' => 'Solicitudes', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" /></svg>'],
-    ['url' => 'admin_finances.php', 'label' => 'Finanzas', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" /></svg>'],
-    ['url' => 'admin_services.php', 'label' => 'Servicios', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" /></svg>'],
-    ['url' => 'admin_users.php', 'label' => 'Usuarios', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a8.94 8.94 0 01-6 2.28 8.94 8.94 0 01-6-2.28m12 0a9 9 0 10-12 0m12 0A9 9 0 0112 21m0-9a3.75 3.75 0 100-7.5A3.75 3.75 0 0012 12z" /></svg>'],
-    ['url' => 'admin_roles.php', 'label' => 'Roles', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m5.25 2.25a8.25 8.25 0 11-16.5 0 8.25 8.25 0 0116.5 0Z" /></svg>'],
-    ['url' => 'admin_settings.php', 'label' => 'Configuracion', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>'],
+$companyName     = trim(getSetting('company_name', 'Portal Asesoria'));
+$companyInitials = trim(getSetting('company_initials', 'AF')) ?: 'AF';
+$companySlogan   = trim(getSetting('company_slogan', 'Asesoria Financiera'));
+
+$current_tax_pages = ['admin_tax_calendar.php', 'admin_tax_filings.php'];
+$sidebarGroupsAdmin = [
+    'Principal' => [
+        ['url' => 'admin_dashboard.php', 'label' => 'Vista 360', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'],
+        ['url' => 'admin_clients.php', 'label' => 'Clientes', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6 5.87v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2m13-10a4 4 0 11-8 0 4 4 0 018 0zm6 2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>'],
+        ['url' => 'admin_requests.php', 'label' => 'Solicitudes', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>'],
+        ['url' => 'admin_finances.php', 'label' => 'Finanzas', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'],
+    ],
+    'Fiscal DGII' => [
+        ['url' => 'admin_tax_calendar.php', 'label' => 'Calendario fiscal', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 16l2 2 4-4"/></svg>'],
+        ['url' => 'admin_tax_filings.php', 'label' => 'Formularios 6xx', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>'],
+        ['url' => 'admin_igualas.php', 'label' => 'Igualas', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>'],
+    ],
+    'Gestion' => [
+        ['url' => 'admin_services.php', 'label' => 'Servicios', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h10"/></svg>'],
+        ['url' => 'admin_users.php', 'label' => 'Usuarios', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'],
+        ['url' => 'admin_roles.php', 'label' => 'Roles', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M12 2l9 4v6c0 5-3.5 9-9 10-5.5-1-9-5-9-10V6l9-4z"/></svg>'],
+        ['url' => 'admin_settings.php', 'label' => 'Configuracion', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317a1.724 1.724 0 013.35 0 1.724 1.724 0 002.591 1.06 1.724 1.724 0 012.37 2.37 1.724 1.724 0 001.06 2.59 1.724 1.724 0 010 3.352 1.724 1.724 0 00-1.06 2.59 1.724 1.724 0 01-2.37 2.37 1.724 1.724 0 00-2.59 1.06 1.724 1.724 0 01-3.35 0 1.724 1.724 0 00-2.591-1.06 1.724 1.724 0 01-2.37-2.37 1.724 1.724 0 00-1.06-2.59 1.724 1.724 0 010-3.352 1.724 1.724 0 001.06-2.59 1.724 1.724 0 012.37-2.37 1.724 1.724 0 002.591-1.06z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>'],
+    ],
 ];
 
-$menuItemsClient = [
-    ['url' => 'client_dashboard.php', 'label' => 'Mi Panel 360', 'icon' => '<svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>'],
+$sidebarGroupsClient = [
+    'Principal' => [
+        ['url' => 'client_dashboard.php', 'label' => 'Mi Panel', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'],
+    ],
 ];
 
-$items = $isAdmin ? $menuItemsAdmin : $menuItemsClient;
+$groups = $isAdmin ? $sidebarGroupsAdmin : $sidebarGroupsClient;
+$whatsappSupport = trim(getSetting('company_phone', ''));
 ?>
-<div class="hidden lg:fixed lg:inset-y-0 lg:z-30 lg:flex lg:w-72 lg:flex-col mt-16">
-    <div class="flex grow flex-col gap-y-5 overflow-y-auto border-r border-slate-200/60 bg-white/50 backdrop-blur-xl px-4 pb-4 pt-8">
-        <div class="px-2 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Menu Principal</div>
-        <nav class="flex flex-1 flex-col">
-            <ul role="list" class="flex flex-1 flex-col gap-y-2">
-                <?php foreach ($items as $item): ?>
+<aside id="appSidebar"
+       class="sidebar fixed lg:static inset-y-0 left-0 z-50 w-[260px] lg:w-[260px] lg:shrink-0
+              bg-white lg:bg-transparent lg:border-r lg:border-stone-200/70
+              flex flex-col px-5 py-6 lg:py-7
+              transform -translate-x-full lg:translate-x-0 transition-transform duration-200 ease-out
+              shadow-2xl lg:shadow-none">
+    <!-- Logo -->
+    <div class="flex items-center gap-3 px-1 pb-5 border-b border-stone-200/70">
+        <div class="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-extrabold text-sm tracking-tight shrink-0">
+            <?= htmlspecialchars(strtoupper(substr($companyInitials, 0, 2))) ?>
+        </div>
+        <div class="min-w-0">
+            <p class="text-[15px] font-bold text-slate-900 truncate leading-tight"><?= htmlspecialchars($companyName) ?></p>
+            <?php if ($companySlogan): ?>
+            <p class="text-[11px] text-slate-400 truncate"><?= htmlspecialchars($companySlogan) ?></p>
+            <?php endif; ?>
+        </div>
+        <button type="button" onclick="closeSidebar()" class="ml-auto lg:hidden p-1.5 text-slate-400 hover:text-slate-900">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+
+    <!-- Navigation (grouped) -->
+    <nav class="flex-1 overflow-y-auto scroll-area pt-4">
+        <?php foreach ($groups as $groupName => $items): ?>
+        <div class="mb-5">
+            <p class="px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-[0.12em]"><?= htmlspecialchars($groupName) ?></p>
+            <ul class="space-y-1">
+                <?php foreach ($items as $item):
+                    $active = $current_page === $item['url'];
+                ?>
                 <li>
                     <a href="<?= $item['url'] ?>"
-                       class="<?= $current_page === $item['url'] ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-inset ring-blue-700/10' : 'text-slate-600 hover:text-blue-600 hover:bg-slate-50' ?> group flex items-center gap-x-3 rounded-2xl p-3 text-sm font-semibold transition-all duration-200">
-                        <div class="<?= $current_page === $item['url'] ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-500' ?> transition-colors">
+                       class="group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all
+                              <?= $active ? 'nav-item-active' : 'text-slate-500 hover:text-slate-900 hover:bg-stone-50' ?>">
+                        <span class="nav-icon <?= $active ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-700' ?> transition-colors">
                             <?= $item['icon'] ?>
-                        </div>
-                        <?= htmlspecialchars($item['label']) ?>
+                        </span>
+                        <span class="font-medium"><?= htmlspecialchars($item['label']) ?></span>
                     </a>
                 </li>
                 <?php endforeach; ?>
             </ul>
+        </div>
+        <?php endforeach; ?>
+    </nav>
 
-            <div class="mt-auto pb-4">
-                <div class="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 p-4 ring-1 ring-inset ring-blue-100">
-                    <p class="text-xs font-semibold text-blue-900">Ayuda y Soporte</p>
-                    <p class="mt-1 text-xs text-blue-700">Si necesitas apoyo con el portal, puedes contactarnos por WhatsApp.</p>
-                </div>
-            </div>
-        </nav>
+    <!-- Support card -->
+    <div class="mt-3 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-4 text-white relative overflow-hidden">
+        <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-blue-500/20 blur-2xl"></div>
+        <div class="relative">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-blue-200">Soporte</p>
+            <p class="mt-1 text-sm font-bold">Necesitas ayuda?</p>
+            <p class="mt-1 text-[11px] text-slate-300 leading-snug">Equipo disponible por WhatsApp.</p>
+            <?php if ($whatsappSupport): ?>
+            <a href="https://wa.me/<?= htmlspecialchars(preg_replace('/[^0-9]/', '', $whatsappSupport)) ?>" target="_blank"
+               class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white text-slate-900 px-3 py-1.5 text-xs font-bold hover:bg-blue-50 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51"/></svg>
+                Contactar
+            </a>
+            <?php endif; ?>
+        </div>
     </div>
-</div>
+
+    <!-- User + logout -->
+    <div class="mt-3 pt-3 border-t border-stone-200/70">
+        <div class="flex items-center gap-3 px-1">
+            <div class="w-9 h-9 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center text-sm font-bold text-slate-700 shrink-0">
+                <?= htmlspecialchars(strtoupper(substr($_SESSION['name'] ?? 'U', 0, 1))) ?>
+            </div>
+            <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-slate-900 truncate"><?= htmlspecialchars($_SESSION['name'] ?? '') ?></p>
+                <p class="text-[11px] text-slate-400 truncate"><?= htmlspecialchars(getRoleName($_SESSION['role'] ?? '')) ?></p>
+            </div>
+            <a href="auth.php?action=logout" title="Salir" class="text-slate-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            </a>
+        </div>
+    </div>
+</aside>
+<div id="sidebarBackdrop" onclick="closeSidebar()" class="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm hidden lg:hidden"></div>
