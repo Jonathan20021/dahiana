@@ -33,6 +33,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($message) {
             $pdo->prepare("INSERT INTO request_comments (request_id, user_id, message) VALUES (?, ?, ?)")
                 ->execute([$request_id, $_SESSION['user_id'], $message]);
+            $newCommentId = $pdo->lastInsertId();
+            if (getSetting('notify_comment', '1') === '1') {
+                sendRequestCommentEmail($request_id, $newCommentId, $_SESSION['user_id']);
+            }
             $success = "Comentario enviado.";
         }
     } elseif ($action === 'upload_file') {
@@ -66,7 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("DELETE FROM request_comments WHERE id = ?")->execute([$_POST['comment_id']]);
         $success = "Comentario eliminado.";
     } elseif ($action === 'update_status' && $isAdmin) {
-        $pdo->prepare("UPDATE requests SET status = ? WHERE id = ?")->execute([$_POST['status'], $request_id]);
+        $newStatus = $_POST['status'];
+        $pdo->prepare("UPDATE requests SET status = ? WHERE id = ?")->execute([$newStatus, $request_id]);
+        if (getSetting('notify_status', '1') === '1') {
+            sendRequestStatusEmail($request_id, $newStatus);
+        }
         header("Location: request_view.php?id=$request_id&updated=1");
         exit;
     }

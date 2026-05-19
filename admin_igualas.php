@@ -32,8 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dueDate = date('Y-m-t', strtotime($period . '-01'));
                 $pdo->prepare("INSERT INTO invoices (client_id, amount, concept, due_date, period, status) VALUES (?, ?, ?, ?, ?, 'pendiente')")
                     ->execute([$client_id, $c['iguala_amount'], $concept, $dueDate, $period]);
+                $newInvId = $pdo->lastInsertId();
                 logClientActivity($client_id, 'invoice', "Volante generado para {$periodLabel}");
-                $success = "Volante generado para {$c['name']}.";
+                $emailNote = '';
+                if (getSetting('notify_invoice', '1') === '1') {
+                    $r = sendInvoiceCreatedEmail($newInvId);
+                    if (!empty($r['ok'])) $emailNote = ' Email enviado.';
+                }
+                $success = "Volante generado para {$c['name']}.{$emailNote}";
             } else {
                 $error = "El cliente ya tiene volante en {$periodLabel}.";
             }
@@ -49,19 +55,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.client_id = u.id AND i.period = " . $pdo->quote($period) . ")
         ")->fetchAll();
         $count = 0;
+        $emailed = 0;
         $dueDate = date('Y-m-t', strtotime($period . '-01'));
+        $notifyOn = getSetting('notify_invoice', '1') === '1';
         foreach ($clientsToBill as $c) {
             $concept = "Iguala " . $periodLabel;
             $pdo->prepare("INSERT INTO invoices (client_id, amount, concept, due_date, period, status) VALUES (?, ?, ?, ?, ?, 'pendiente')")
                 ->execute([$c['id'], $c['iguala_amount'], $concept, $dueDate, $period]);
+            $newInvId = $pdo->lastInsertId();
             logClientActivity($c['id'], 'invoice', "Volante generado para {$periodLabel} (lote)");
+            if ($notifyOn) {
+                $r = sendInvoiceCreatedEmail($newInvId);
+                if (!empty($r['ok'])) $emailed++;
+            }
             $count++;
         }
-        $success = "Se generaron {$count} volante(s) para {$periodLabel}.";
+        $emailLine = $notifyOn ? " {$emailed} notificacion(es) enviadas." : '';
+        $success = "Se generaron {$count} volante(s) para {$periodLabel}.{$emailLine}";
     } elseif ($action === 'mark_paid') {
         $iid = (int)($_POST['invoice_id'] ?? 0);
         $pdo->prepare("UPDATE invoices SET status='pagado', paid_at = NOW() WHERE id = ?")->execute([$iid]);
-        $success = "Volante marcado como pagado.";
+        $emailNote = '';
+        if (getSetting('notify_invoice_paid', '1') === '1') {
+            $r = sendInvoicePaidEmail($iid);
+            if (!empty($r['ok'])) $emailNote = ' Confirmacion enviada.';
+        }
+        $success = "Volante marcado como pagado.{$emailNote}";
     } elseif ($action === 'delete_invoice') {
         $iid = (int)($_POST['invoice_id'] ?? 0);
         $pdo->prepare("DELETE FROM invoices WHERE id = ?")->execute([$iid]);

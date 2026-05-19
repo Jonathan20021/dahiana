@@ -14,7 +14,11 @@
       "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_dashboard.php\")",
       "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\client_details.php\")",
       "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_tax_calendar.php\")",
-      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_tax_filings.php\")"
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_tax_filings.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\lib\\\\email.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_settings.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\admin_igualas.php\")",
+      "Bash(php -l \"c:\\\\xampp\\\\htdocs\\\\dahiana\\\\request_view.php\")"
     ]
   }
 }

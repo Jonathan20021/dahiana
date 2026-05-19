@@ -43,7 +43,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
             if ($generated > 0) {
                 logClientActivity($newId, 'tax', "Se generaron {$generated} obligaciones DGII automaticas");
             }
-            $success = "Cliente agregado correctamente. Obligaciones DGII generadas: {$generated}.";
+            // Enviar welcome email
+            $emailMsg = '';
+            if (getSetting('notify_welcome', '1') === '1') {
+                $res = sendWelcomeEmail($newId, $password);
+                if (!empty($res['ok'])) {
+                    $emailMsg = ' Email de bienvenida enviado.';
+                    logClientActivity($newId, 'email', "Welcome email enviado a {$email}");
+                }
+            }
+            $success = "Cliente agregado correctamente. Obligaciones DGII generadas: {$generated}.{$emailMsg}";
         } catch (PDOException $e) {
             $error = "No se pudo agregar el cliente. El correo puede estar duplicado.";
         }

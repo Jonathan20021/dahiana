@@ -23,6 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $oid = (int)($_POST['obligation_id'] ?? 0);
         $pdo->prepare("DELETE FROM tax_obligations WHERE id=?")->execute([$oid]);
         $success = "Obligacion eliminada.";
+    } elseif ($action === 'send_email_reminder') {
+        $oid = (int)($_POST['obligation_id'] ?? 0);
+        $r = sendObligationReminderEmail($oid);
+        if (!empty($r['ok'])) {
+            $success = "Recordatorio enviado por email.";
+        } else {
+            $error = "No se pudo enviar el email: " . ($r['error'] ?? $r['reason'] ?? 'desconocido');
+        }
     } elseif ($action === 'regenerate_all') {
         $clients = $pdo->query("
             SELECT u.id
@@ -280,6 +288,15 @@ include 'components/layout_start.php';
                     <a href="client_details.php?id=<?= $ob['client_id'] ?>" class="icon-btn !w-8 !h-8 hover:!bg-blue-100 hover:!text-blue-700" title="Abrir cliente">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                     </a>
+                    <?php if (in_array($ob['status'], ['pendiente','vencido'], true)): ?>
+                    <form method="POST" class="inline">
+                        <input type="hidden" name="action" value="send_email_reminder">
+                        <input type="hidden" name="obligation_id" value="<?= $ob['id'] ?>">
+                        <button type="submit" class="icon-btn !w-8 !h-8 hover:!bg-blue-100 hover:!text-blue-700" title="Recordar por email">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                        </button>
+                    </form>
+                    <?php endif; ?>
                     <?php if ($cleanPhone && in_array($ob['status'], ['pendiente','vencido'], true)):
                         $reminderMsg = "Hola {$ob['client_name']}, " . getSetting('whatsapp_greeting', 'te escribimos de tu Asesoria Financiera') . ". Te recordamos que la obligacion " . getObligationLabel($ob['obligation_type']) . " de " . formatPeriod($ob['period']) . " vence el " . date('d/m/Y', strtotime($ob['due_date'])) . ".";
                     ?>

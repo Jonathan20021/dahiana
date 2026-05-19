@@ -68,7 +68,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("INSERT INTO requests (client_id, service_id, status, estimated_delivery_date) VALUES (?, ?, 'pendiente', ?)")
                 ->execute([$client_id, $service_id, $estimated_date]);
         }
+        $newReqId = $pdo->lastInsertId();
         logClientActivity($client_id, 'request', "Servicio asignado: {$service['title']}");
+        if (getSetting('notify_request', '1') === '1') {
+            sendRequestAssignedEmail($newReqId);
+        }
         $success = "Servicio asignado correctamente.";
     } elseif ($action === 'update_status') {
         $request_id = $_POST['request_id'];
@@ -76,6 +80,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("UPDATE requests SET status = ? WHERE id = ? AND client_id = ?")
             ->execute([$status, $request_id, $client_id]);
         logClientActivity($client_id, 'status_change', "Estado de tramite actualizado a {$status}");
+        if (getSetting('notify_status', '1') === '1') {
+            sendRequestStatusEmail($request_id, $status);
+        }
         $success = "Estado actualizado.";
     } elseif ($action === 'delete_request') {
         $request_id = $_POST['request_id'];

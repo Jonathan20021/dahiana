@@ -253,6 +253,44 @@ function bootstrapCrmSchema() {
                 INDEX idx_filing (filing_id)
             )
         ");
+
+        // Email log (auditoria de envios)
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS email_log (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                to_email VARCHAR(500) DEFAULT NULL,
+                subject VARCHAR(500) DEFAULT NULL,
+                success TINYINT(1) DEFAULT 0,
+                status_code INT DEFAULT 0,
+                response TEXT DEFAULT NULL,
+                error TEXT DEFAULT NULL,
+                kind VARCHAR(50) DEFAULT NULL,
+                related_id INT DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_kind (kind),
+                INDEX idx_success (success),
+                INDEX idx_created (created_at)
+            )
+        ");
+
+        // Semilla de settings de email (solo si no existen)
+        $defaults = [
+            'email_enabled'      => '1',
+            'resend_api_key'     => 're_GYcmrt6X_96y7HETGCn4Dkmp6cz3o97jQ',
+            'email_from'         => 'no-reply@kyrosrd.com',
+            'email_from_name'    => '',
+            'email_reply_to'     => '',
+            'notify_welcome'     => '1',
+            'notify_invoice'     => '1',
+            'notify_invoice_paid'=> '1',
+            'notify_request'     => '1',
+            'notify_status'      => '1',
+            'notify_comment'     => '1',
+        ];
+        $seed = $pdo->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES (?, ?)");
+        foreach ($defaults as $k => $v) {
+            $seed->execute([$k, $v]);
+        }
     } catch (PDOException $e) {
         // Ignore - keep app usable
     }
@@ -510,6 +548,9 @@ function formatPeriod($period) {
     }
     return $period;
 }
+
+// Email / Resend integration
+require_once __DIR__ . '/lib/email.php';
 
 function slugify($value) {
     $value = trim((string) $value);

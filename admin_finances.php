@@ -15,12 +15,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($client_id && $amount && $concept && $due_date) {
             $stmt = $pdo->prepare("INSERT INTO invoices (client_id, amount, concept, due_date, status) VALUES (?, ?, ?, ?, 'pendiente')");
             $stmt->execute([$client_id, $amount, $concept, $due_date]);
-            $success = "Volante de cobro creado exitosamente.";
+            $newInvId = $pdo->lastInsertId();
+            $emailNote = '';
+            if (getSetting('notify_invoice', '1') === '1') {
+                $r = sendInvoiceCreatedEmail($newInvId);
+                if (!empty($r['ok'])) $emailNote = ' Notificacion enviada al cliente.';
+            }
+            logClientActivity($client_id, 'invoice', "Volante creado: {$concept}");
+            $success = "Volante de cobro creado exitosamente.{$emailNote}";
         }
     } elseif ($action === 'mark_paid') {
         $invoice_id = $_POST['invoice_id'];
-        $pdo->prepare("UPDATE invoices SET status = 'pagado' WHERE id = ?")->execute([$invoice_id]);
-        $success = "Marcado como pagado.";
+        $pdo->prepare("UPDATE invoices SET status = 'pagado', paid_at = NOW() WHERE id = ?")->execute([$invoice_id]);
+        $emailNote = '';
+        if (getSetting('notify_invoice_paid', '1') === '1') {
+            $r = sendInvoicePaidEmail($invoice_id);
+            if (!empty($r['ok'])) $emailNote = ' Confirmacion enviada al cliente.';
+        }
+        $success = "Marcado como pagado.{$emailNote}";
     } elseif ($action === 'delete_invoice') {
         $invoice_id = $_POST['invoice_id'];
         $pdo->prepare("DELETE FROM invoices WHERE id = ?")->execute([$invoice_id]);
