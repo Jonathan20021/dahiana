@@ -43,22 +43,25 @@ $groups = $isAdmin ? $sidebarGroupsAdmin : $sidebarGroupsClient;
 $whatsappSupport = trim(getSetting('company_phone', ''));
 ?>
 <aside id="appSidebar"
-       class="sidebar fixed lg:static inset-y-0 left-0 z-50 w-[260px] lg:w-[260px] lg:shrink-0
+       class="sidebar fixed lg:static inset-y-0 left-0 z-50 lg:shrink-0
               bg-white lg:bg-transparent lg:border-r lg:border-stone-200/70
               flex flex-col px-5 py-6 lg:py-7
-              transform -translate-x-full lg:translate-x-0 transition-transform duration-200 ease-out
+              transform -translate-x-full lg:translate-x-0 transition-all duration-200 ease-out
               shadow-2xl lg:shadow-none">
-    <!-- Logo -->
+    <!-- Logo + collapse toggle -->
     <div class="flex items-center gap-3 px-1 pb-5 border-b border-stone-200/70">
         <div class="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-extrabold text-sm tracking-tight shrink-0">
             <?= htmlspecialchars(strtoupper(substr($companyInitials, 0, 2))) ?>
         </div>
-        <div class="min-w-0">
+        <div class="sb-brand min-w-0">
             <p class="text-[15px] font-bold text-slate-900 truncate leading-tight"><?= htmlspecialchars($companyName) ?></p>
             <?php if ($companySlogan): ?>
             <p class="text-[11px] text-slate-400 truncate"><?= htmlspecialchars($companySlogan) ?></p>
             <?php endif; ?>
         </div>
+        <button type="button" onclick="toggleSidebar()" class="sb-collapse-btn hidden lg:inline-flex" title="Colapsar/expandir menu">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        </button>
         <button type="button" onclick="closeSidebar()" class="ml-auto lg:hidden p-1.5 text-slate-400 hover:text-slate-900">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -89,7 +92,7 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
         ?>
         <?php foreach ($groups as $groupName => $items): ?>
         <div class="mb-5">
-            <p class="px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-[0.12em]"><?= htmlspecialchars($groupName) ?></p>
+            <p class="sb-group-header px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-[0.12em]"><?= htmlspecialchars($groupName) ?></p>
             <ul class="space-y-1">
                 <?php foreach ($items as $item):
                     $active = $current_page === $item['url'];
@@ -98,14 +101,15 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
                 <li>
                     <a href="<?= $item['url'] ?>"
                        <?= $tourKey ? 'data-tour="' . htmlspecialchars($tourKey) . '"' : '' ?>
-                       class="group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all
+                       data-tooltip="<?= htmlspecialchars($item['label']) ?>"
+                       class="sb-link group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all
                               <?= $active ? 'nav-item-active' : 'text-slate-500 hover:text-slate-900 hover:bg-stone-50' ?>">
-                        <span class="nav-icon <?= $active ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-700' ?> transition-colors">
+                        <span class="nav-icon shrink-0 <?= $active ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-700' ?> transition-colors">
                             <?= $item['icon'] ?>
                         </span>
-                        <span class="font-medium flex-1"><?= htmlspecialchars($item['label']) ?></span>
+                        <span class="sb-label font-medium flex-1 truncate"><?= htmlspecialchars($item['label']) ?></span>
                         <?php if (!empty($item['badge'])): ?>
-                        <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold"><?= (int)$item['badge'] ?></span>
+                        <span class="sb-badge inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold"><?= (int)$item['badge'] ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
@@ -119,17 +123,18 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
             <button type="button"
                     onclick="if (window.startOnboarding) window.startOnboarding();"
                     data-tour="help-button"
-                    class="w-full group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-slate-500 hover:text-slate-900 hover:bg-stone-50 transition-all">
-                <span class="nav-icon text-slate-400 group-hover:text-slate-700 transition-colors">
+                    data-tooltip="Ayuda / Tour guiado"
+                    class="sb-link w-full group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-slate-500 hover:text-slate-900 hover:bg-stone-50 transition-all">
+                <span class="nav-icon shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.5M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5h.01"/></svg>
                 </span>
-                <span class="font-medium">Ayuda / Tour guiado</span>
+                <span class="sb-label font-medium">Ayuda / Tour guiado</span>
             </button>
         </div>
     </nav>
 
     <!-- Support card -->
-    <div class="mt-3 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-4 text-white relative overflow-hidden">
+    <div class="sb-extra mt-3 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-4 text-white relative overflow-hidden">
         <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-blue-500/20 blur-2xl"></div>
         <div class="relative">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-blue-200">Soporte</p>
@@ -147,15 +152,15 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
 
     <!-- User + logout -->
     <div class="mt-3 pt-3 border-t border-stone-200/70">
-        <div class="flex items-center gap-3 px-1">
+        <div class="sb-user flex items-center gap-3 px-1">
             <div class="w-9 h-9 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center text-sm font-bold text-slate-700 shrink-0">
                 <?= htmlspecialchars(strtoupper(substr($_SESSION['name'] ?? 'U', 0, 1))) ?>
             </div>
-            <div class="min-w-0 flex-1">
+            <div class="sb-user-info min-w-0 flex-1">
                 <p class="text-sm font-semibold text-slate-900 truncate"><?= htmlspecialchars($_SESSION['name'] ?? '') ?></p>
                 <p class="text-[11px] text-slate-400 truncate"><?= htmlspecialchars(getRoleName($_SESSION['role'] ?? '')) ?></p>
             </div>
-            <a href="auth.php?action=logout" title="Salir" class="text-slate-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50">
+            <a href="auth.php?action=logout" data-tooltip="Cerrar sesion" title="Salir" class="sb-link text-slate-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
             </a>
         </div>

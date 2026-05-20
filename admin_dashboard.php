@@ -414,8 +414,70 @@ if ($hasAlerts):
         </div>
     </div>
 
-    <!-- Clients list -->
+    <!-- Recent IA invoices stream -->
     <div class="surface-card overflow-hidden lg:col-span-2">
+        <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-base font-bold text-slate-900">Facturas IA recientes</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Ultimas extraidas o aprobadas por la IA</p>
+            </div>
+            <a href="admin_invoice_review.php" class="text-xs font-semibold text-blue-600 hover:text-blue-700">Revisar todo &rarr;</a>
+        </div>
+        <ul class="divide-y divide-stone-100">
+            <?php if (empty($recentInvoices)): ?>
+            <li class="px-6 py-10 text-center text-sm text-slate-400">
+                <svg class="w-10 h-10 mx-auto text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                Cuando los clientes suban facturas apareceran aqui en tiempo real.
+            </li>
+            <?php else: ?>
+            <?php foreach ($recentInvoices as $inv):
+                $statusTone = $inv['status'] === 'approved' ? 'emerald' : ($inv['status'] === 'extracted' ? 'amber' : 'red');
+                $statusLabel = $inv['status'] === 'approved' ? 'Aprobada' : ($inv['status'] === 'extracted' ? 'Por validar' : 'Error');
+                $confPct = round(((float)($inv['confidence'] ?? 0)) * 100);
+                $sourceIcon = $inv['source'] === 'telegram'
+                    ? '<svg class="w-3.5 h-3.5 text-sky-500" fill="currentColor" viewBox="0 0 24 24"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>'
+                    : '<svg class="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3v18m-6-9h18M21 6V4a1 1 0 00-1-1H4a1 1 0 00-1 1v16a1 1 0 001 1h16a1 1 0 001-1v-2"/></svg>';
+            ?>
+            <li>
+                <a href="admin_invoice_review.php?client_id=<?= (int)$inv['client_id'] ?>" class="flex items-center gap-3 px-6 py-3.5 hover:bg-stone-50/60 transition-colors">
+                    <div class="w-9 h-9 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center text-xs font-bold text-slate-700 shrink-0">
+                        <?= htmlspecialchars(strtoupper(substr($inv['business_name'] ?: $inv['client_name'] ?: 'C', 0, 1))) ?>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <p class="text-sm font-bold text-slate-900 truncate"><?= htmlspecialchars($inv['business_name'] ?: $inv['client_name']) ?></p>
+                            <?= $sourceIcon ?>
+                        </div>
+                        <p class="text-[11px] text-slate-500 truncate">
+                            <?= htmlspecialchars($inv['counterparty_name'] ?: '—') ?>
+                            <?php if ($inv['doc_type']): ?>
+                            <span class="text-slate-400">·</span> <?= $inv['doc_type'] === 'venta' ? '607' : '606' ?>
+                            <?php endif; ?>
+                            <span class="text-slate-400">·</span> <?= date('d/m H:i', strtotime($inv['created_at'])) ?>
+                        </p>
+                    </div>
+                    <?php if ((float)$inv['total'] > 0): ?>
+                    <div class="text-right shrink-0">
+                        <p class="text-sm font-extrabold text-slate-900">RD$ <?= number_format((float)$inv['total'], 0) ?></p>
+                        <?php if ($confPct > 0): ?>
+                        <p class="text-[10px] font-bold text-<?= $statusTone === 'amber' ? 'amber' : 'slate' ?>-500"><?= $confPct ?>% IA</p>
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; ?>
+                    <span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-<?= $statusTone ?>-50 text-<?= $statusTone ?>-700">
+                        <?= $statusLabel ?>
+                    </span>
+                </a>
+            </li>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </ul>
+    </div>
+</div>
+
+<!-- Clients directory -->
+<div class="grid grid-cols-1 mt-4">
+    <div class="surface-card overflow-hidden">
         <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
             <div>
                 <h3 class="text-base font-bold text-slate-900">Directorio de clientes</h3>
@@ -448,7 +510,7 @@ if ($hasAlerts):
             <?php endforeach; ?>
         </ul>
     </div>
-</div>
+</div> <!-- /clients directory grid -->
 
 <script>
 const baseChart = {

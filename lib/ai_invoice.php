@@ -196,6 +196,73 @@ function aiPaymentMethods() {
 }
 
 // --------------------------------------------------------------------------
+// Validation helpers (DGII patterns)
+// --------------------------------------------------------------------------
+
+/**
+ * Valida un RNC dominicano (cedula 11 digitos o RNC 9 digitos).
+ * Acepta y normaliza con/sin guiones.
+ */
+function aiValidateRnc($rnc) {
+    $digits = preg_replace('/\D+/', '', (string)$rnc);
+    if (strlen($digits) === 9 || strlen($digits) === 11) return $digits;
+    return '';
+}
+
+/**
+ * Valida un NCF segun los formatos vigentes de la DGII.
+ * Acepta:
+ *  - 11 chars: B0X + 8 digitos (B01,B02,...,B17)
+ *  - 13 chars: E3X + 10 digitos (e-CF: E31, E32, E33, E34, E41-47)
+ *
+ * Devuelve el NCF normalizado en mayusculas sin espacios, o '' si invalido.
+ */
+function aiValidateNcf($ncf) {
+    $clean = strtoupper(preg_replace('/\s+/', '', (string)$ncf));
+    if (preg_match('/^B0[1-9]\d{8}$/', $clean) || preg_match('/^B1[0-7]\d{8}$/', $clean)) return $clean;
+    if (preg_match('/^E[3-4]\d\d{10}$/', $clean)) return $clean;
+    return '';
+}
+
+/**
+ * Detecta y devuelve el tipo de NCF a partir del NCF (los 3 primeros chars).
+ */
+function aiNcfType($ncf) {
+    $clean = strtoupper(preg_replace('/\s+/', '', (string)$ncf));
+    if (strlen($clean) >= 3) return substr($clean, 0, 3);
+    return '';
+}
+
+/**
+ * Rate limit per chat_id / per client.
+ * Usa la tabla telegram_state como cache simple (data_json).
+ * Devuelve true si la accion esta permitida, false si excede.
+ */
+function aiCheckRateLimit($key, $maxPerHour = 30) {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT data_json FROM telegram_state WHERE chat_id = ?");
+        // Reutilizamos telegram_state -- $key debe ser un int (chat_id) si es Telegram, o un client_id*-1 para diferenciar
+        $stmt->execute([(int)$key]);
+        $row = $stmt->fetch();
+        $bucket = $row && !empty($row['data_json']) ? (json_decode($row['data_json'], true) ?: []) : [];
+        $now = time();
+        $bucket['rate'] = $bucket['rate'] ?? [];
+        // Drop entries older than 1 hour
+        $bucket['rate'] = array_values(array_filter($bucket['rate'], fn($ts) => $now - $ts < 3600));
+        if (count($bucket['rate']) >= $maxPerHour) {
+            return false;
+        }
+        $bucket['rate'][] = $now;
+        $stmt = $pdo->prepare("INSERT INTO telegram_state (chat_id, state, data_json) VALUES (?, 'idle', ?) ON DUPLICATE KEY UPDATE data_json = VALUES(data_json), updated_at = NOW()");
+        $stmt->execute([(int)$key, json_encode($bucket, JSON_UNESCAPED_UNICODE)]);
+        return true;
+    } catch (PDOException $e) {
+        return true; // fail-open en caso de error de DB
+    }
+}
+
+// --------------------------------------------------------------------------
 // File helpers
 // --------------------------------------------------------------------------
 function aiUploadsDir() {
@@ -315,6 +382,16 @@ function aiSystemPrompt() {
         "- Si NO puedes leer un campo dejalo vacio (string vacia o 0 numerico) y BAJA la confianza. NO inventes.",
         "- En notes pon cualquier observacion: 'NCF parcialmente borroso', 'Total ilegible, calculado desde subtotal+itbis', etc.",
         "",
+        "=== EJEMPLOS DE EXTRACCION ===",
+        "Ejemplo 1 (factura combustible, B02):",
+        '{"doc_type":"compra","date_doc":"2026-03-15","date_payment":"","rnc":"131611176","counterparty_name":"ESTACION SHELL PUNTA CANA","ncf":"B0200001234","ncf_modified":"","ncf_type":"B02","concept":"Combustible diesel","expense_category":"02","payment_method":"03","currency":"DOP","subtotal":1500.00,"itbis":270.00,"propina_legal":0.00,"transporte":0.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":1770.00,"confidence":0.95,"notes":""}',
+        "",
+        "Ejemplo 2 (restaurante con propina, B02):",
+        '{"doc_type":"compra","date_doc":"2026-03-08","date_payment":"","rnc":"130221642","counterparty_name":"PARADOR VISTA DEL MAR","ncf":"B0200271365","ncf_modified":"","ncf_type":"B02","concept":"Almuerzo equipo gerencial","expense_category":"05","payment_method":"03","currency":"DOP","subtotal":1599.15,"itbis":266.25,"propina_legal":159.92,"transporte":0.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":2025.32,"confidence":0.92,"notes":"Propina 10% incluida"}',
+        "",
+        "Ejemplo 3 (venta empresa, e-CF):",
+        '{"doc_type":"venta","date_doc":"2026-02-15","date_payment":"","rnc":"131907768","counterparty_name":"GREEN STAR PARTNERS","ncf":"E310000164476","ncf_modified":"","ncf_type":"E31","concept":"Venta mercaderia con transporte","expense_category":"","payment_method":"02","currency":"DOP","subtotal":316000.00,"itbis":56880.00,"propina_legal":0.00,"transporte":18000.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":390880.00,"confidence":0.97,"notes":""}',
+        "",
         "DEVUELVE UNICAMENTE el JSON estricto. Sin explicaciones. Sin markdown. Sin texto extra.",
     ]);
 }
@@ -366,21 +443,33 @@ function aiInvoiceJsonSchema() {
 function aiNormalizeExtraction(array $data) {
     $warnings = [];
 
-    // Normalize RNC: only digits, 9 or 11.
-    $rnc = preg_replace('/\D+/', '', (string)($data['rnc'] ?? ''));
-    if ($rnc !== '' && !in_array(strlen($rnc), [9, 11], true)) {
-        $warnings[] = 'RNC con longitud no estandar (' . strlen($rnc) . ' digitos).';
+    // RNC: validar y normalizar
+    $rncRaw = (string)($data['rnc'] ?? '');
+    $rnc = aiValidateRnc($rncRaw);
+    if ($rnc === '' && $rncRaw !== '') {
+        $warnings[] = 'RNC con formato invalido (' . preg_replace('/\D+/', '', $rncRaw) . ').';
+        $rnc = preg_replace('/\D+/', '', $rncRaw);
     }
     $data['rnc'] = $rnc;
 
-    // Normalize NCF: uppercase, no spaces. Should match B/E + 10-12 chars typical.
-    $ncf = strtoupper(preg_replace('/\s+/', '', (string)($data['ncf'] ?? '')));
-    $data['ncf'] = $ncf;
-    if ($ncf !== '' && !preg_match('/^[BE]\d{2}[A-Z0-9]{7,11}$/i', $ncf)) {
-        $warnings[] = 'NCF con formato no estandar (' . $ncf . ').';
+    // NCF: validar y normalizar (B0X + 8d, B1X + 8d, E3X/E4X + 10d)
+    $ncfRaw = (string)($data['ncf'] ?? '');
+    $ncfValidated = aiValidateNcf($ncfRaw);
+    $ncfClean = strtoupper(preg_replace('/\s+/', '', $ncfRaw));
+    if ($ncfClean !== '' && $ncfValidated === '') {
+        $warnings[] = 'NCF con formato no estandar (' . $ncfClean . ').';
     }
+    $data['ncf'] = $ncfValidated ?: $ncfClean;
     $data['ncf_modified'] = strtoupper(preg_replace('/\s+/', '', (string)($data['ncf_modified'] ?? '')));
-    $data['ncf_type']     = strtoupper(preg_replace('/\s+/', '', (string)($data['ncf_type'] ?? '')));
+
+    // ncf_type: si no viene o no concuerda con el NCF, lo derivamos del NCF
+    $ncfTypeProvided = strtoupper(preg_replace('/\s+/', '', (string)($data['ncf_type'] ?? '')));
+    $ncfTypeDerived = aiNcfType($data['ncf']);
+    if ($ncfTypeDerived !== '' && $ncfTypeProvided !== $ncfTypeDerived) {
+        $data['ncf_type'] = $ncfTypeDerived;
+    } else {
+        $data['ncf_type'] = $ncfTypeProvided;
+    }
 
     // Force numeric
     $numKeys = ['subtotal','itbis','propina_legal','transporte','isr_retention','itbis_retention','other_taxes','total','confidence'];

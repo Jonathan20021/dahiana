@@ -88,6 +88,71 @@ $isLoggedIn  = isset($_SESSION['user_id']);
         @media (max-width: 640px) {
             .app-shell { border-radius: 14px; }
         }
+
+        /* === Sidebar default (expanded) === */
+        .sidebar { width: 260px; }
+        @media (min-width: 1024px) { .sidebar { width: 260px; } }
+        .sb-collapse-btn {
+            width: 30px; height: 30px; border-radius: 10px; background: #F4F4F5; color: #475569;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: all .15s ease; margin-left: auto; flex-shrink: 0;
+        }
+        .sb-collapse-btn:hover { background: #E5E7EB; color: #0F172A; }
+
+        /* === Sidebar collapsed (desktop only) === */
+        @media (min-width: 1024px) {
+            body.sidebar-collapsed .sidebar { width: 76px; padding-left: 12px; padding-right: 12px; }
+            body.sidebar-collapsed .sb-brand { display: none; }
+            body.sidebar-collapsed .sb-collapse-btn { margin-left: 0; }
+            body.sidebar-collapsed .sb-collapse-btn svg { transform: rotate(180deg); }
+            body.sidebar-collapsed .sb-group-header { display: none; }
+            body.sidebar-collapsed .sb-label { display: none; }
+            body.sidebar-collapsed .sb-badge { position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; font-size: 9px; padding: 0 4px; }
+            body.sidebar-collapsed .sb-extra { display: none; }
+            body.sidebar-collapsed .sb-user-info { display: none; }
+            body.sidebar-collapsed .sb-user { justify-content: center; padding: 0; gap: 6px; flex-direction: column; }
+            body.sidebar-collapsed .sb-link {
+                position: relative;
+                justify-content: center;
+                padding-left: 0; padding-right: 0;
+            }
+            body.sidebar-collapsed .sb-link[data-tooltip]:hover::after {
+                content: attr(data-tooltip);
+                position: absolute;
+                left: calc(100% + 12px);
+                top: 50%; transform: translateY(-50%);
+                background: #0F172A;
+                color: #fff;
+                padding: 6px 12px;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 600;
+                white-space: nowrap;
+                z-index: 50;
+                pointer-events: none;
+                box-shadow: 0 4px 12px rgba(15,23,42,.2);
+            }
+            body.sidebar-collapsed .sb-link[data-tooltip]:hover::before {
+                content: '';
+                position: absolute;
+                left: calc(100% + 6px);
+                top: 50%; transform: translateY(-50%);
+                border-style: solid;
+                border-width: 5px 6px 5px 0;
+                border-color: transparent #0F172A transparent transparent;
+                z-index: 50;
+            }
+        }
+
+        /* Topbar pin button */
+        .topbar-pin {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 36px; height: 36px; border-radius: 12px;
+            background: #F4F4F5; color: #475569;
+            transition: all .15s ease;
+        }
+        .topbar-pin:hover { background: #E5E7EB; color: #0F172A; }
+
         <?= $head_extra ?>
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

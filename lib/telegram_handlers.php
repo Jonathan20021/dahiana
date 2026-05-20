@@ -11,6 +11,13 @@ function tgRespondError($chatId, $msg) {
 
 function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $caption = '') {
     global $pdo;
+
+    // Rate limit: max 30 facturas/hora por chat
+    if (!aiCheckRateLimit($chatId, 30)) {
+        tgSendMessage($chatId, "⚠️ Has enviado muchas facturas en poco tiempo. Por seguridad pausamos temporalmente. Intenta de nuevo en 1 hora o contacta a tu asesor si es urgente.");
+        return;
+    }
+
     if (isset($photoOrDoc[0]) && is_array($photoOrDoc[0])) {
         usort($photoOrDoc, fn($a,$b) => ($b['file_size'] ?? 0) <=> ($a['file_size'] ?? 0));
         $file = $photoOrDoc[0];
@@ -19,6 +26,13 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     }
     $fileId = $file['file_id'] ?? null;
     if (!$fileId) { tgRespondError($chatId, 'No pude leer el archivo.'); return; }
+
+    // Validacion de tamano max (mismo limite que portal web)
+    $sizeLimit = max(1, (int)getSetting('openai_max_size_mb', '12')) * 1024 * 1024;
+    if (!empty($file['file_size']) && (int)$file['file_size'] > $sizeLimit) {
+        tgSendMessage($chatId, "Archivo demasiado grande. Maximo " . getSetting('openai_max_size_mb', '12') . " MB.");
+        return;
+    }
 
     $info = tgGetFile($fileId);
     if (!$info['ok']) { tgRespondError($chatId, 'No pude descargar: ' . $info['error']); return; }
@@ -142,6 +156,11 @@ function tgHandleMessage(array $msg) {
             return;
         }
         if (preg_match('/^\/vincular(?:@\w+)?\s+(\S+)/i', $text, $m)) {
+            // Anti-bruteforce: max 5 intentos /vincular por chat por hora
+            if (!aiCheckRateLimit($chatId * -1, 5)) {
+                tgSendMessage($chatId, "Demasiados intentos de vinculacion. Espera una hora antes de intentar de nuevo.");
+                return;
+            }
             $code = $m[1];
             $found = tgFindClientByCode($code);
             if (!$found) {

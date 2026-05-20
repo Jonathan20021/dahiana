@@ -20,9 +20,37 @@
         if (bd) bd.classList.add('hidden');
         document.body.style.overflow = '';
     }
-    // Close on Escape
+    // Collapse/expand sidebar on desktop with persistence
+    function toggleSidebar() {
+        document.body.classList.toggle('sidebar-collapsed');
+        try {
+            localStorage.setItem('sb_collapsed', document.body.classList.contains('sidebar-collapsed') ? '1' : '0');
+        } catch (e) {}
+    }
+    // Restore persisted state ASAP to avoid flash
+    (function() {
+        try {
+            if (localStorage.getItem('sb_collapsed') === '1') {
+                document.body.classList.add('sidebar-collapsed');
+            }
+        } catch (e) {}
+    })();
+    // Keyboard: [ collapses, ] expands, Escape closes mobile
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeSidebar();
+        // Avoid hijacking when typing
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+        if (e.key === '[' && window.innerWidth >= 1024) {
+            e.preventDefault();
+            document.body.classList.add('sidebar-collapsed');
+            try { localStorage.setItem('sb_collapsed', '1'); } catch (e) {}
+        }
+        if (e.key === ']' && window.innerWidth >= 1024) {
+            e.preventDefault();
+            document.body.classList.remove('sidebar-collapsed');
+            try { localStorage.setItem('sb_collapsed', '0'); } catch (e) {}
+        }
     });
 </script>
 
