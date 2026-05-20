@@ -1,0 +1,127 @@
+<?php
+// telegram_poll.php
+// Hace polling a Telegram via getUpdates en vez de depender del webhook.
+// Esto evita TODOS los problemas de WAF / Imunify360 / firewall del hosting,
+// porque NUESTRO servidor inicia la conexion saliente a Telegram (no al reves).
+//
+// Configurar como cron en cPanel:
+//   * * * * * /usr/bin/php /home/USER/public_html/telegram_poll.php >/dev/null 2>&1
+//
+// Tambien se puede invocar desde el navegador (admin only) con ?manual=1
+// para testear manualmente.
+
+// Permitir CLI o web (admin)
+$isCli = (php_sapi_name() === 'cli');
+
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/lib/telegram_handlers.php';
+
+if (!$isCli) {
+    // Requerir admin si se invoca via web
+    if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+        if (!function_exists('canAccessArea') || !canAccessArea($_SESSION['role'] ?? '', 'admin')) {
+            http_response_code(403);
+            exit('Forbidden');
+        }
+    }
+    header('Content-Type: text/plain; charset=utf-8');
+}
+
+// Lock para evitar dos ejecuciones simultaneas
+$LOCK_FILE = __DIR__ . '/uploads/logs/telegram_poll.lock';
+@mkdir(dirname($LOCK_FILE), 0755, true);
+$lockHandle = @fopen($LOCK_FILE, 'c');
+if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    echo "Another polling instance is running. Skipping.\n";
+    exit;
+}
+
+$LOG_FILE = __DIR__ . '/uploads/logs/telegram_poll.log';
+
+function pollLog($msg, $ctx = null) {
+    global $LOG_FILE;
+    $line = '[' . date('Y-m-d H:i:s') . '] ' . $msg;
+    if ($ctx !== null) {
+        $line .= ' ' . json_encode($ctx, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    @file_put_contents($LOG_FILE, $line . PHP_EOL, FILE_APPEND);
+    echo $line . "\n";
+}
+
+$cfg = tgConfig();
+if (empty($cfg['token'])) {
+    pollLog('No token configured. Exiting.');
+    exit;
+}
+if (!$cfg['enabled']) {
+    pollLog('Telegram disabled in settings. Exiting.');
+    exit;
+}
+
+// Asegurar que no haya webhook activo (sino getUpdates devuelve 409)
+$wh = tgGetWebhookInfo();
+if (!empty($wh['ok']) && !empty($wh['result']['url'])) {
+    pollLog('Deleting active webhook to enable polling', ['url' => $wh['result']['url']]);
+    tgDeleteWebhook();
+}
+
+// Estado: ultimo update_id procesado, guardado en settings
+$lastOffset = (int)getSetting('telegram_last_offset', 0);
+pollLog('Polling start', ['offset' => $lastOffset]);
+
+// getUpdates con timeout corto (somos cron)
+$startTime = microtime(true);
+$processedCount = 0;
+$maxRuntimeSeconds = 50; // dejar buffer para que cron de 1 min no se solape
+
+while (true) {
+    if ((microtime(true) - $startTime) >= $maxRuntimeSeconds) {
+        pollLog('Time budget reached, stopping');
+        break;
+    }
+
+    $res = tgApi('getUpdates', [
+        'offset'  => $lastOffset + 1,
+        'limit'   => 50,
+        'timeout' => 10, // long polling: telegram espera hasta 10s
+        'allowed_updates' => json_encode(['message','edited_message','callback_query']),
+    ]);
+
+    if (!$res['ok']) {
+        pollLog('getUpdates failed', ['error' => $res['error']]);
+        break;
+    }
+
+    $updates = $res['result'] ?? [];
+    if (empty($updates)) {
+        // No hay updates pendientes ahora
+        break;
+    }
+
+    foreach ($updates as $update) {
+        $uid = (int)($update['update_id'] ?? 0);
+        if ($uid > $lastOffset) $lastOffset = $uid;
+        try {
+            tgProcessUpdate($update);
+            $processedCount++;
+        } catch (Throwable $e) {
+            pollLog('Update handler exception', [
+                'update_id' => $uid,
+                'msg' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+        }
+    }
+
+    // Persistir offset
+    global $pdo;
+    $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_last_offset', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
+        ->execute([(string)$lastOffset]);
+}
+
+pollLog('Polling end', ['processed' => $processedCount, 'last_offset' => $lastOffset]);
+
+flock($lockHandle, LOCK_UN);
+fclose($lockHandle);
+@unlink($LOCK_FILE);
