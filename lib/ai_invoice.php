@@ -145,6 +145,8 @@ function bootstrapAiInvoiceSchema() {
             'openai_model'    => 'gpt-4o',
             'openai_max_size_mb' => '12',
             'openai_auto_process' => '1',
+            'openai_auto_approve_threshold' => '0',  // 0 = nunca auto-aprobar. 0.95 = aprobar si confianza >= 95%
+            'notify_invoice_approved' => '1',         // emails al cliente al aprobar
             'telegram_enabled' => '0',
             'telegram_bot_token' => '',
             'telegram_bot_username' => '',
@@ -669,7 +671,28 @@ function aiProcessUpload($uploadId) {
         WHERE id=?
     ")->execute([$docType, $period, $cfg['model'], (int)($res['tokens'] ?? 0), $uploadId]);
 
-    return ['ok' => true, 'upload_id' => $uploadId, 'extraction_id' => $extractionId];
+    // Auto-aprobacion si la confianza supera el umbral configurado
+    $autoApproveThreshold = (float)getSetting('openai_auto_approve_threshold', '0');
+    $autoApproved = false;
+    if ($autoApproveThreshold > 0 && (float)$d['confidence'] >= $autoApproveThreshold) {
+        // Solo auto-aprobar si hay datos minimos: RNC + NCF + total > 0
+        $hasMinimum = !empty($d['rnc']) && !empty($d['ncf']) && (float)$d['total'] > 0;
+        if ($hasMinimum) {
+            $ap = aiApproveExtraction($extractionId, null);
+            if (!empty($ap['ok'])) {
+                $autoApproved = true;
+                if (function_exists('logClientActivity')) {
+                    logClientActivity((int)$upload['client_id'], 'invoice_auto_approved', "Factura auto-aprobada por IA (confianza " . round(((float)$d['confidence']) * 100) . "%)", [
+                        'extraction_id' => $extractionId,
+                        'doc_type'      => $docType,
+                        'period'        => $period,
+                    ]);
+                }
+            }
+        }
+    }
+
+    return ['ok' => true, 'upload_id' => $uploadId, 'extraction_id' => $extractionId, 'auto_approved' => $autoApproved];
 }
 
 // --------------------------------------------------------------------------
@@ -788,6 +811,31 @@ function aiApproveExtraction($extractionId, $approverId = null) {
 
     recalcTaxFilingTotals($filingId);
     recalcIT1ForClient((int)$e['client_id'], $period);
+
+    // Notificacion al cliente (best-effort)
+    if (getSetting('notify_invoice_approved', '1') === '1') {
+        // Trae el origen para no spamear si vino por Telegram (el bot ya respondio)
+        $upMeta = $pdo->prepare("SELECT source FROM invoice_uploads WHERE id=?");
+        $upMeta->execute([$e['upload_id']]);
+        $source = $upMeta->fetchColumn();
+        if (function_exists('sendInvoiceApprovedEmail') && $source !== 'telegram') {
+            @sendInvoiceApprovedEmail((int)$e['client_id'], $extractionId, $filingType, $period);
+        }
+        // Si el cliente tiene Telegram vinculado, le mandamos un push corto
+        if (function_exists('tgClientForChat') && function_exists('tgSendMessage')) {
+            try {
+                $link = $pdo->prepare("SELECT chat_id FROM telegram_links WHERE client_id = ? AND active = 1 LIMIT 1");
+                $link->execute([(int)$e['client_id']]);
+                $chatId = (int)($link->fetchColumn() ?: 0);
+                if ($chatId > 0) {
+                    $msg = "✅ Tu asesor aprobó la factura " . ($filingType === '607' ? '(Venta)' : '(Compra)')
+                         . " del periodo {$period}. NCF <code>" . htmlspecialchars($e['ncf'] ?: '-') . "</code>"
+                         . " · Total RD$ " . number_format((float)$e['total'], 2);
+                    tgSendMessage($chatId, $msg);
+                }
+            } catch (PDOException $ex) {}
+        }
+    }
 
     return ['ok' => true, 'filing_id' => $filingId, 'row_id' => $rowId, 'filing_type' => $filingType, 'period' => $period];
 }

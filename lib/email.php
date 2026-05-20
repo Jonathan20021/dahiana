@@ -538,3 +538,40 @@ function sendAdminNewSignupEmail($userId) {
     }
     return ['ok' => true];
 }
+
+/**
+ * Notifica al cliente cuando su factura es aprobada por el asesor.
+ */
+function sendInvoiceApprovedEmail($clientId, $extractionId, $filingType, $period) {
+    global $pdo;
+    $u = $pdo->prepare("SELECT name, email FROM users WHERE id = ?");
+    $u->execute([$clientId]);
+    $user = $u->fetch();
+    if (!$user || empty($user['email'])) return ['ok' => false];
+
+    $e = $pdo->prepare("SELECT counterparty_name, total, itbis, ncf, doc_type FROM invoice_extractions WHERE id = ?");
+    $e->execute([$extractionId]);
+    $row = $e->fetch();
+    if (!$row) return ['ok' => false];
+
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
+    $url   = $proto . '://' . $host . rtrim($scriptDir, '/') . '/client_uploads.php';
+
+    $tipo = $row['doc_type'] === 'venta' ? 'Venta (607)' : 'Compra (606)';
+    $headline = 'Tu factura fue aprobada';
+    $body = '<p>Hola ' . htmlspecialchars(explode(' ', $user['name'])[0] ?? '') . ',</p>'
+          . '<p>Tu factura fue revisada y aprobada por nuestro equipo. Ya quedo registrada en tu formulario fiscal.</p>'
+          . '<div style="margin:16px 0;padding:14px 16px;border:1px solid #E5E7EB;border-radius:12px;background:#F9FAFB">'
+          . '<p style="margin:0;font-size:12px;color:#6B7280">' . $tipo . ' &middot; Periodo ' . htmlspecialchars($period) . '</p>'
+          . '<p style="margin:6px 0 0;font-size:14px;font-weight:700">' . htmlspecialchars($row['counterparty_name'] ?: '-') . '</p>'
+          . '<p style="margin:2px 0 0;font-size:12px;color:#6B7280">NCF ' . htmlspecialchars($row['ncf'] ?: '-') . '</p>'
+          . '<p style="margin:10px 0 0;font-size:16px;font-weight:800;color:#0F172A">RD$ ' . number_format((float)$row['total'], 2) . '</p>'
+          . '<p style="margin:2px 0 0;font-size:11px;color:#6B7280">ITBIS RD$ ' . number_format((float)$row['itbis'], 2) . '</p>'
+          . '</div>'
+          . '<p>Puedes ver el detalle y subir mas facturas en tu portal.</p>';
+
+    $html = wrapEmailBase($headline, $body, $url, 'Ver mis facturas');
+    return sendEmailRaw($user['email'], 'Factura aprobada - ' . $period, $html, ['kind' => 'invoice_approved', 'related_id' => $extractionId]);
+}

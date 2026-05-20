@@ -228,23 +228,27 @@ function tgWelcomeText($companyName) {
         "",
         "Cuando estes vinculado, simplemente envia <b>fotos de tus facturas</b> y yo me encargo del resto.",
         "",
-        "Comandos:",
+        "<b>Comandos disponibles</b>",
         "/vincular CODIGO  - vincula tu cuenta",
-        "/estado  - ve el resumen del mes",
-        "/salir  - desvincula este chat",
-        "/ayuda  - vuelve a ver este mensaje",
+        "/estado  - resumen general del periodo",
+        "/saldo  - tu IT-1 (ITBIS a pagar)",
+        "/vencimientos  - proximas obligaciones DGII",
+        "/ayuda  - ver esta lista",
+        "/salir  - desvincular este chat",
     ]);
 }
 
 function tgHelpText() {
     return implode("\n", [
-        "<b>Como funciona</b>",
+        "<b>Como funciona el flujo</b>",
         "1. Envia una foto a este chat (puedes enviar varias).",
-        "2. La IA lee el RNC, NCF, monto, ITBIS y categoria.",
-        "3. Te confirmo y tu asesor valida desde el portal.",
+        "2. La IA lee RNC, NCF, monto, ITBIS y categoria automaticamente.",
+        "3. Tu asesor valida y la registra en 606/607.",
         "",
-        "Comandos:",
-        "/estado  - resumen del periodo actual",
+        "<b>Comandos</b>",
+        "/estado  - resumen del mes (facturas + ITBIS)",
+        "/saldo [YYYY-MM]  - IT-1 ITBIS del periodo",
+        "/vencimientos  - calendario DGII",
         "/salir  - desvincula este chat",
         "/ayuda  - este mensaje",
     ]);

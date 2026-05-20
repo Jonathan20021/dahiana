@@ -98,6 +98,40 @@ $overdueInvoices = $pdo->query("
     WHERE status='pendiente' AND due_date < CURDATE()
 ")->fetch();
 
+// AI invoice metrics (current month)
+$aiPeriod = date('Y-m');
+$aiKpis = $pdo->prepare("
+    SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN u.status='approved'  THEN 1 ELSE 0 END) AS approved,
+        SUM(CASE WHEN u.status='extracted' THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN u.status='error'     THEN 1 ELSE 0 END) AS errors,
+        SUM(CASE WHEN u.source='telegram'  THEN 1 ELSE 0 END) AS via_telegram,
+        COALESCE(SUM(CASE WHEN e.doc_type='compra' THEN e.itbis ELSE 0 END), 0) AS itbis_compras,
+        COALESCE(SUM(CASE WHEN e.doc_type='venta'  THEN e.itbis ELSE 0 END), 0) AS itbis_ventas
+    FROM invoice_uploads u
+    LEFT JOIN invoice_extractions e ON e.upload_id = u.id
+    WHERE (e.period = ? OR (e.period IS NULL AND DATE_FORMAT(u.created_at,'%Y-%m') = ?))
+");
+$aiKpis->execute([$aiPeriod, $aiPeriod]);
+$ai = $aiKpis->fetch() ?: ['total'=>0,'approved'=>0,'pending'=>0,'errors'=>0,'via_telegram'=>0,'itbis_compras'=>0,'itbis_ventas'=>0];
+
+// Pending approvals count (public signups)
+$pendingApprovalsCount = signupPendingCount();
+
+// Recent IA activity (last 5 extracted/approved invoices)
+$recentInvoices = $pdo->query("
+    SELECT u.id, u.status, u.created_at, u.source, u.client_id,
+           e.doc_type, e.total, e.itbis, e.counterparty_name, e.confidence,
+           c.name AS client_name, c.business_name
+    FROM invoice_uploads u
+    LEFT JOIN invoice_extractions e ON e.upload_id = u.id
+    LEFT JOIN users c ON c.id = u.client_id
+    WHERE u.status IN ('extracted','approved','error')
+    ORDER BY u.created_at DESC
+    LIMIT 6
+")->fetchAll();
+
 // All clients
 $stmt = $pdo->query("
     SELECT u.*,
@@ -152,6 +186,80 @@ include 'components/layout_start.php';
         <p class="mt-1 text-[11px] text-slate-400 font-medium"><?= $s['change'] ?></p>
     </div>
     <?php endforeach; ?>
+</div>
+
+<!-- IA + Aprobaciones bloque -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+    <!-- IA card -->
+    <a href="admin_invoice_review.php" class="surface-card p-5 lg:col-span-2 hover:border-blue-200 transition-colors group">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <p class="text-[10px] font-bold uppercase tracking-wider text-blue-600 mb-1">IA Fiscal este mes</p>
+                <h3 class="text-lg font-extrabold text-slate-900">Lectura inteligente de facturas</h3>
+            </div>
+            <div class="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+            </div>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+                <p class="text-2xl font-extrabold text-slate-900"><?= (int)$ai['total'] ?></p>
+                <p class="text-[11px] text-slate-500">Subidas</p>
+            </div>
+            <div>
+                <p class="text-2xl font-extrabold text-amber-600"><?= (int)$ai['pending'] ?></p>
+                <p class="text-[11px] text-slate-500">Por validar</p>
+            </div>
+            <div>
+                <p class="text-2xl font-extrabold text-emerald-600"><?= (int)$ai['approved'] ?></p>
+                <p class="text-[11px] text-slate-500">Aprobadas</p>
+            </div>
+            <div>
+                <p class="text-2xl font-extrabold text-sky-600"><?= (int)$ai['via_telegram'] ?></p>
+                <p class="text-[11px] text-slate-500">Por Telegram</p>
+            </div>
+        </div>
+        <div class="mt-4 pt-4 border-t border-stone-100 flex items-center justify-between">
+            <div class="grid grid-cols-2 gap-4 flex-1">
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">ITBIS cobrado</p>
+                    <p class="text-sm font-bold text-emerald-700">RD$ <?= number_format((float)$ai['itbis_ventas'], 0) ?></p>
+                </div>
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">ITBIS pagado</p>
+                    <p class="text-sm font-bold text-blue-700">RD$ <?= number_format((float)$ai['itbis_compras'], 0) ?></p>
+                </div>
+            </div>
+            <span class="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 group-hover:text-blue-800">
+                Revisar facturas
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            </span>
+        </div>
+    </a>
+
+    <!-- Aprobaciones pendientes -->
+    <a href="admin_approvals.php" class="surface-card p-5 hover:border-amber-200 transition-colors group <?= $pendingApprovalsCount > 0 ? 'bg-amber-50/40 border-amber-100' : '' ?>">
+        <div class="flex items-start justify-between mb-3">
+            <div>
+                <p class="text-[10px] font-bold uppercase tracking-wider <?= $pendingApprovalsCount > 0 ? 'text-amber-700' : 'text-slate-500' ?> mb-1">Aprobaciones</p>
+                <h3 class="text-lg font-extrabold text-slate-900">Clientes nuevos</h3>
+            </div>
+            <div class="w-10 h-10 rounded-2xl <?= $pendingApprovalsCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-slate-500' ?> flex items-center justify-center relative">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                <?php if ($pendingApprovalsCount > 0): ?>
+                <span class="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold animate-pulse"><?= $pendingApprovalsCount ?></span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <p class="text-4xl font-extrabold tracking-tight <?= $pendingApprovalsCount > 0 ? 'text-amber-700' : 'text-slate-300' ?>"><?= $pendingApprovalsCount ?></p>
+        <p class="text-xs text-slate-500 mt-1">
+            <?= $pendingApprovalsCount > 0 ? 'esperando tu revision' : 'sin solicitudes pendientes' ?>
+        </p>
+        <span class="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 group-hover:text-blue-800">
+            <?= $pendingApprovalsCount > 0 ? 'Revisar ahora' : 'Ver historial' ?>
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </span>
+    </a>
 </div>
 
 <!-- DGII Alerts -->

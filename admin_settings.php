@@ -14,12 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         'company_slogan','company_initials','invoice_note','whatsapp_greeting',
         'whatsapp_invoice_template','whatsapp_request_template',
         'resend_api_key','email_from','email_from_name','email_reply_to',
-        'openai_api_key','openai_model','openai_max_size_mb',
+        'openai_api_key','openai_model','openai_max_size_mb','openai_auto_approve_threshold',
         'telegram_bot_token','telegram_bot_username','telegram_webhook_secret',
     ];
     $boolFields = [
         'email_enabled','notify_welcome','notify_invoice','notify_invoice_paid',
-        'notify_request','notify_status','notify_comment',
+        'notify_request','notify_status','notify_comment','notify_invoice_approved',
         'openai_enabled','openai_auto_process',
         'telegram_enabled',
     ];
@@ -308,8 +308,25 @@ include 'components/layout_start.php';
                     <input type="number" min="1" max="20" name="openai_max_size_mb" value="<?= htmlspecialchars(getSetting('openai_max_size_mb', '12')) ?>" class="field text-sm">
                 </div>
                 <div>
-                    <label class="field-label">Categorias 606</label>
-                    <p class="text-[11px] text-slate-500 leading-snug mt-1">Se autodetectan: 01 Personal, 02 Suministros, 03 Arrendamientos, 04 Activos fijos, 05 Representacion, 06 Otras, 07 Financieros, 08 Extraordinarios, 09 Compras, 10 Adquisiciones, 11 Seguros.</p>
+                    <label class="field-label">Auto-aprobar si confianza es ≥</label>
+                    <?php $threshold = (float)getSetting('openai_auto_approve_threshold', '0'); ?>
+                    <select name="openai_auto_approve_threshold" class="field text-sm">
+                        <option value="0" <?= $threshold == 0 ? 'selected' : '' ?>>Nunca auto-aprobar (revision manual siempre)</option>
+                        <option value="0.85" <?= $threshold == 0.85 ? 'selected' : '' ?>>85% - Agresivo</option>
+                        <option value="0.90" <?= $threshold == 0.90 ? 'selected' : '' ?>>90% - Balanceado</option>
+                        <option value="0.95" <?= $threshold == 0.95 ? 'selected' : '' ?>>95% - Conservador (recomendado)</option>
+                        <option value="0.98" <?= $threshold == 0.98 ? 'selected' : '' ?>>98% - Solo muy alta confianza</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-slate-400">Si la IA esta segura (y tiene RNC + NCF + total), se inserta en 606/607 sin que apruebes manualmente.</p>
+                </div>
+                <div class="sm:col-span-3">
+                    <label class="flex items-start gap-3 cursor-pointer rounded-2xl p-3 border border-stone-100 hover:bg-stone-50">
+                        <input type="checkbox" name="notify_invoice_approved" value="1" <?= getSetting('notify_invoice_approved', '1') === '1' ? 'checked' : '' ?> class="mt-1">
+                        <span>
+                            <span class="text-sm font-semibold text-slate-900">Notificar al cliente cuando se apruebe su factura</span>
+                            <span class="block text-[11px] text-slate-500">Manda un email + push de Telegram si el cliente esta vinculado. No spamea: solo facturas subidas desde el portal.</span>
+                        </span>
+                    </label>
                 </div>
             </div>
         </div>

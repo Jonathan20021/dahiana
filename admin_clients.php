@@ -294,7 +294,10 @@ include 'components/layout_start.php';
                     <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51"/></svg>
                 </a>
                 <?php endif; ?>
-                <a href="admin_finances.php" class="icon-btn !w-8 !h-8 hover:!bg-blue-100 hover:!text-blue-700" title="Volantes">
+                <a href="admin_invoice_review.php?client_id=<?= $c['id'] ?>" class="icon-btn !w-8 !h-8 hover:!bg-amber-100 hover:!text-amber-700" title="Facturas IA del cliente">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                </a>
+                <a href="admin_tax_filings.php?client_id=<?= $c['id'] ?>" class="icon-btn !w-8 !h-8 hover:!bg-blue-100 hover:!text-blue-700" title="Formularios DGII">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                 </a>
                 <a href="client_details.php?id=<?= $c['id'] ?>" class="btn-dark !text-xs !py-1.5 !px-3">

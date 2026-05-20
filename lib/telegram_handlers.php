@@ -159,6 +159,62 @@ function tgHandleMessage(array $msg) {
             tgSendMessage($chatId, "Listo, este chat ya no esta vinculado. Cuando quieras puedes volver con /vincular CODIGO.");
             return;
         }
+        if (preg_match('/^\/(vencimientos|agenda)(?:@\w+)?/i', $text)) {
+            if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
+            if (function_exists('generateObligationsForClient')) {
+                generateObligationsForClient((int)$client['client_id'], 3);
+            }
+            $obl = $pdo->prepare("
+                SELECT obligation_type, period, due_date, status
+                FROM tax_obligations
+                WHERE client_id = ? AND status IN ('pendiente','vencido')
+                ORDER BY due_date ASC
+                LIMIT 8
+            ");
+            $obl->execute([$client['client_id']]);
+            $rows = $obl->fetchAll();
+            if (empty($rows)) {
+                tgSendMessage($chatId, "Estas al dia. No tienes vencimientos cercanos.");
+                return;
+            }
+            $lines = ["<b>Proximos vencimientos DGII</b>", ""];
+            foreach ($rows as $r) {
+                $days = (int)((strtotime($r['due_date']) - strtotime(date('Y-m-d'))) / 86400);
+                $when = $days < 0 ? "🔴 vencido hace " . abs($days) . " d"
+                      : ($days === 0 ? "⏰ HOY" : ($days <= 5 ? "🟠 en {$days} d" : "🟢 en {$days} d"));
+                $lines[] = "• <b>" . htmlspecialchars($r['obligation_type']) . "</b> · " . htmlspecialchars($r['period']) . " · " . $when . " (" . date('d/m', strtotime($r['due_date'])) . ")";
+            }
+            tgSendMessage($chatId, implode("\n", $lines));
+            return;
+        }
+        if (preg_match('/^\/(saldo|iva|itbis)(?:@\w+)?(?:\s+(\d{4}-\d{2}))?/i', $text, $m)) {
+            if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
+            $p = !empty($m[2]) ? $m[2] : date('Y-m');
+            $q = $pdo->prepare("
+                SELECT
+                  COALESCE(SUM(CASE WHEN e.doc_type='compra' THEN e.itbis ELSE 0 END),0) AS itbis_compras,
+                  COALESCE(SUM(CASE WHEN e.doc_type='venta'  THEN e.itbis ELSE 0 END),0) AS itbis_ventas,
+                  COUNT(*) AS total
+                FROM invoice_uploads u
+                LEFT JOIN invoice_extractions e ON e.upload_id = u.id
+                WHERE u.client_id = ? AND e.period = ?
+            ");
+            $q->execute([$client['client_id'], $p]);
+            $s = $q->fetch();
+            $balance = (float)$s['itbis_ventas'] - (float)$s['itbis_compras'];
+            $emoji = $balance > 0 ? '🔴' : '🟢';
+            tgSendMessage($chatId, implode("\n", [
+                "<b>IT-1 ITBIS · " . formatPeriod($p) . "</b>",
+                "",
+                "ITBIS Cobrado: RD$ " . number_format((float)$s['itbis_ventas'], 2),
+                "ITBIS Pagado: RD$ " . number_format((float)$s['itbis_compras'], 2),
+                "",
+                $emoji . " <b>" . ($balance > 0 ? "A pagar" : "Saldo a favor") . ": RD$ " . number_format(abs($balance), 2) . "</b>",
+                "",
+                "Documentos del periodo: " . (int)$s['total'],
+            ]));
+            return;
+        }
         if (preg_match('/^\/(estado|status)(?:@\w+)?/i', $text)) {
             if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
             $period = date('Y-m');
