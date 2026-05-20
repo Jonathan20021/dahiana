@@ -172,188 +172,343 @@ include 'components/layout_start.php';
 ?>
 
 <?php if ($success): ?>
-<div class="mb-4 rounded-2xl bg-emerald-50 px-4 py-3 border border-emerald-100 text-sm font-medium text-emerald-800"><?= htmlspecialchars($success) ?></div>
+<div class="cu-flash cu-flash-success animate-fadeIn">
+    <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+    <span><?= htmlspecialchars($success) ?></span>
+</div>
 <?php endif; ?>
 <?php if ($error): ?>
-<div class="mb-4 rounded-2xl bg-red-50 px-4 py-3 border border-red-100 text-sm font-medium text-red-700"><?= htmlspecialchars($error) ?></div>
+<div class="cu-flash cu-flash-error animate-fadeIn">
+    <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+    <span><?= htmlspecialchars($error) ?></span>
+</div>
 <?php endif; ?>
 
 <!-- Period selector + summary -->
-<div class="surface-card p-4 mb-4 flex flex-col lg:flex-row items-center gap-3">
-    <div class="flex items-center gap-2">
-        <a href="?period=<?= $prevPeriod ?>" class="icon-btn">
+<div class="cu-period-bar">
+    <div class="cu-period-nav">
+        <a href="?period=<?= $prevPeriod ?>" class="cu-nav-btn" title="Mes anterior">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
         </a>
-        <span class="px-3 py-2 rounded-xl bg-stone-50 text-sm font-bold text-slate-900 min-w-[140px] text-center"><?= $periodLabel ?></span>
-        <a href="?period=<?= $nextPeriod ?>" class="icon-btn">
+        <div class="cu-period-label">
+            <span class="cu-period-month"><?= $periodLabel ?></span>
+            <span class="cu-period-sub">Periodo fiscal</span>
+        </div>
+        <a href="?period=<?= $nextPeriod ?>" class="cu-nav-btn" title="Mes siguiente">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
         </a>
     </div>
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:ml-auto w-full lg:w-auto">
-        <div class="rounded-xl bg-stone-50 px-3 py-2 text-center">
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Compras</p>
-            <p class="text-sm font-extrabold text-slate-900">RD$ <?= number_format((float)$s['total_compras'], 0) ?></p>
+    <div class="cu-stats">
+        <div class="cu-stat">
+            <p class="cu-stat-label">Compras</p>
+            <p class="cu-stat-val">RD$ <?= number_format((float)$s['total_compras'], 0) ?></p>
         </div>
-        <div class="rounded-xl bg-stone-50 px-3 py-2 text-center">
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Ventas</p>
-            <p class="text-sm font-extrabold text-slate-900">RD$ <?= number_format((float)$s['total_ventas'], 0) ?></p>
+        <div class="cu-stat">
+            <p class="cu-stat-label">Ventas</p>
+            <p class="cu-stat-val">RD$ <?= number_format((float)$s['total_ventas'], 0) ?></p>
         </div>
-        <div class="rounded-xl bg-stone-50 px-3 py-2 text-center">
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">ITBIS pagado</p>
-            <p class="text-sm font-extrabold text-slate-900">RD$ <?= number_format((float)$s['itbis_compras'], 0) ?></p>
+        <div class="cu-stat">
+            <p class="cu-stat-label">ITBIS pagado</p>
+            <p class="cu-stat-val cu-stat-val-blue">RD$ <?= number_format((float)$s['itbis_compras'], 0) ?></p>
         </div>
-        <div class="rounded-xl <?= $it1Balance > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700' ?> px-3 py-2 text-center">
-            <p class="text-[10px] uppercase tracking-wider opacity-70 font-bold">IT-1 estimado</p>
-            <p class="text-sm font-extrabold">RD$ <?= number_format($it1Balance, 0) ?></p>
+        <div class="cu-stat <?= $it1Balance > 0 ? 'cu-stat-red' : 'cu-stat-green' ?>">
+            <p class="cu-stat-label">IT-1 <?= $it1Balance > 0 ? 'a pagar' : 'saldo a favor' ?></p>
+            <p class="cu-stat-val">RD$ <?= number_format(abs($it1Balance), 0) ?></p>
         </div>
     </div>
 </div>
 
-<!-- Upload zone -->
-<div class="surface-card p-5 mb-4">
-    <div class="flex items-start gap-4 mb-3">
-        <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+<!-- Upload zone (hero) -->
+<div class="cu-upload-hero">
+    <div class="cu-upload-info">
+        <div class="cu-upload-icon">
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
         </div>
         <div>
-            <h3 class="text-base font-bold text-slate-900">Subir facturas con IA</h3>
-            <p class="text-xs text-slate-500 leading-relaxed mt-0.5">
-                Toma una foto a tu factura o sube un archivo. Nuestra IA lee el RNC, NCF, monto e ITBIS y lo deja listo para que tu asesor presente 606, 607 e IT-1.
-            </p>
+            <h3 class="cu-upload-title">Sube tus facturas con IA</h3>
+            <p class="cu-upload-desc">Toma una foto a tu factura o suelta el archivo aqui. La IA extrae RNC, NCF, ITBIS y total automaticamente.</p>
+            <div class="cu-upload-pills">
+                <span class="cu-mini-pill">JPG · PNG · WEBP · HEIC</span>
+                <span class="cu-mini-pill">Multiple a la vez</span>
+                <span class="cu-mini-pill">Hasta <?= htmlspecialchars(getSetting('openai_max_size_mb', '12')) ?>MB c/u</span>
+            </div>
         </div>
     </div>
 
-    <form method="POST" enctype="multipart/form-data" class="space-y-3" id="uploadForm">
+    <form method="POST" enctype="multipart/form-data" id="uploadForm" class="cu-upload-form">
         <input type="hidden" name="action" value="upload">
-        <div class="flex flex-col sm:flex-row gap-3">
-            <div class="sm:w-44">
-                <label class="field-label">Tipo</label>
-                <select name="doc_type" class="field text-sm">
-                    <option value="auto">Auto (la IA decide)</option>
-                    <option value="compra">Compra (para el 606)</option>
-                    <option value="venta">Venta (para el 607)</option>
-                </select>
+
+        <label class="cu-dropzone" id="dropZone">
+            <input type="file" name="files[]" id="fileInput" accept="image/*" multiple class="hidden">
+            <div class="cu-dropzone-icon">
+                <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
             </div>
-            <div class="flex-1">
-                <label class="field-label">Fotos o archivos</label>
-                <label class="block cursor-pointer rounded-2xl border-2 border-dashed border-stone-200 bg-stone-50 hover:border-blue-400 hover:bg-blue-50/40 transition-colors px-4 py-6 text-center" id="dropZone">
-                    <svg class="w-7 h-7 mx-auto text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 100 18 9 9 0 000-18z"/></svg>
-                    <p class="mt-2 text-sm font-semibold text-slate-700">Arrastra fotos aqui o toca para seleccionar</p>
-                    <p class="text-[11px] text-slate-400">Acepta JPG, PNG y WEBP. Puedes subir varias a la vez.</p>
-                    <input type="file" name="files[]" id="fileInput" accept="image/*" multiple class="hidden">
-                </label>
-                <p id="fileSummary" class="mt-2 text-xs text-slate-500 hidden"></p>
-            </div>
-        </div>
-        <div class="flex justify-end">
-            <button type="submit" id="uploadBtn" class="btn-dark text-sm">
+            <p class="cu-dropzone-title">Arrastra aqui tus facturas</p>
+            <p class="cu-dropzone-sub">o haz click para seleccionar desde tu dispositivo</p>
+            <p id="fileSummary" class="cu-dropzone-summary hidden"></p>
+        </label>
+
+        <div class="cu-upload-controls">
+            <select name="doc_type" class="cu-select">
+                <option value="auto">Auto (la IA decide)</option>
+                <option value="compra">Compra (para el 606)</option>
+                <option value="venta">Venta (para el 607)</option>
+            </select>
+            <button type="submit" id="uploadBtn" class="cu-submit-btn">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                Subir y procesar con IA
+                Procesar con IA
             </button>
         </div>
     </form>
 </div>
 
 <!-- Uploads list -->
-<div class="surface-card overflow-hidden">
-    <div class="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
-        <h3 class="text-base font-bold text-slate-900">Mis facturas</h3>
-        <span class="text-xs text-slate-400"><?= count($uploads) ?> registro(s)</span>
+<div class="cu-list">
+    <div class="cu-list-head">
+        <div>
+            <h3 class="cu-list-title">Mis facturas</h3>
+            <p class="cu-list-sub"><?= count($uploads) ?> en total <?php if (!empty($uploads)): ?>· las mas recientes arriba<?php endif; ?></p>
+        </div>
+        <?php
+        // Quick filter tabs at the top of the list
+        $tabCounts = ['all' => count($uploads)];
+        foreach ($uploads as $u) {
+            $key = $u['status'] === 'approved' ? 'approved' : ($u['status'] === 'extracted' ? 'extracted' : ($u['status'] === 'error' ? 'error' : 'pending'));
+            $tabCounts[$key] = ($tabCounts[$key] ?? 0) + 1;
+        }
+        ?>
+        <div class="cu-tabs" role="tablist">
+            <button type="button" class="cu-tab is-active" data-filter="all">Todas <span class="cu-tab-count"><?= $tabCounts['all'] ?? 0 ?></span></button>
+            <button type="button" class="cu-tab" data-filter="extracted">Por validar <span class="cu-tab-count"><?= $tabCounts['extracted'] ?? 0 ?></span></button>
+            <button type="button" class="cu-tab" data-filter="approved">Aprobadas <span class="cu-tab-count"><?= $tabCounts['approved'] ?? 0 ?></span></button>
+            <?php if (!empty($tabCounts['error'])): ?>
+            <button type="button" class="cu-tab" data-filter="error">Errores <span class="cu-tab-count"><?= $tabCounts['error'] ?></span></button>
+            <?php endif; ?>
+        </div>
     </div>
 
     <?php if (empty($uploads)): ?>
-    <div class="py-12 text-center text-sm text-slate-400">
-        Aun no has subido facturas. Sube la primera arriba.
+    <div class="cu-empty">
+        <div class="cu-empty-icon">
+            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+        <p class="cu-empty-title">Aun no has subido facturas</p>
+        <p class="cu-empty-sub">Sube la primera arriba y veras el resultado en pocos segundos.</p>
     </div>
     <?php else: ?>
-    <div class="overflow-x-auto scroll-area">
-        <table class="w-full text-xs">
-            <thead class="bg-stone-50/60 text-[10px] uppercase tracking-wider text-slate-500">
-                <tr>
-                    <th class="px-4 py-2 text-left font-bold">Archivo</th>
-                    <th class="px-4 py-2 text-left font-bold">Tipo</th>
-                    <th class="px-4 py-2 text-left font-bold">Periodo</th>
-                    <th class="px-4 py-2 text-left font-bold">Datos extraidos</th>
-                    <th class="px-4 py-2 text-right font-bold">Total</th>
-                    <th class="px-4 py-2 text-right font-bold">ITBIS</th>
-                    <th class="px-4 py-2 text-left font-bold">Estado</th>
-                    <th class="px-4 py-2"></th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-stone-100">
-                <?php foreach ($uploads as $u):
-                    $statusBadge = match($u['status']) {
-                        'uploaded'   => '<span class="badge-dot badge-slate">En cola</span>',
-                        'processing' => '<span class="badge-dot badge-blue">Procesando</span>',
-                        'extracted'  => '<span class="badge-dot badge-amber">Por aprobar</span>',
-                        'approved'   => '<span class="badge-dot badge-green">Aprobada</span>',
-                        'rejected'   => '<span class="badge-dot badge-slate">Rechazada</span>',
-                        'error'      => '<span class="badge-dot badge-red">Error</span>',
-                        default      => '<span class="badge-dot badge-slate">' . htmlspecialchars($u['status']) . '</span>',
-                    };
-                    $docTypeLabel = $u['ai_doc_type'] ? ($u['ai_doc_type']==='venta'?'Venta · 607':'Compra · 606') : ($u['doc_type']==='auto'?'Auto':ucfirst($u['doc_type']));
-                    $thumbHref = 'uploads/invoices/' . htmlspecialchars($u['filename']);
-                ?>
-                <tr class="hover:bg-stone-50/60">
-                    <td class="px-4 py-2 max-w-xs">
-                        <a href="<?= $thumbHref ?>" target="_blank" class="flex items-center gap-2 hover:text-blue-600">
-                            <div class="w-9 h-9 rounded-lg bg-stone-100 border border-stone-200 flex items-center justify-center text-slate-400 shrink-0 overflow-hidden">
-                                <?php if (strpos($u['mime_type'], 'image/') === 0): ?>
-                                <img src="<?= $thumbHref ?>" alt="" class="w-full h-full object-cover">
-                                <?php else: ?>
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                                <?php endif; ?>
-                            </div>
-                            <div class="min-w-0">
-                                <p class="font-semibold truncate"><?= htmlspecialchars($u['original_name']) ?></p>
-                                <p class="text-[10px] text-slate-400"><?= date('d/m H:i', strtotime($u['created_at'])) ?></p>
-                            </div>
-                        </a>
-                    </td>
-                    <td class="px-4 py-2"><?= htmlspecialchars($docTypeLabel) ?></td>
-                    <td class="px-4 py-2 font-mono"><?= htmlspecialchars($u['ai_period'] ?? $u['period'] ?? '—') ?></td>
-                    <td class="px-4 py-2">
-                        <?php if ($u['extraction_id']): ?>
-                            <p class="font-semibold text-slate-900 truncate max-w-[220px]"><?= htmlspecialchars($u['counterparty_name'] ?: '—') ?></p>
-                            <p class="text-[10px] text-slate-500 font-mono">RNC <?= htmlspecialchars($u['rnc'] ?: '—') ?> · NCF <?= htmlspecialchars($u['ncf'] ?: '—') ?></p>
-                        <?php elseif ($u['status'] === 'error'): ?>
-                            <p class="text-[11px] text-red-600 truncate max-w-[220px]"><?= htmlspecialchars($u['error_message'] ?? 'Error') ?></p>
-                        <?php else: ?>
-                            <span class="text-slate-400">—</span>
-                        <?php endif; ?>
-                    </td>
-                    <td class="px-4 py-2 text-right font-semibold">
-                        <?= $u['total'] ? 'RD$ ' . number_format((float)$u['total'], 2) : '—' ?>
-                    </td>
-                    <td class="px-4 py-2 text-right text-slate-600">
-                        <?= $u['itbis'] ? 'RD$ ' . number_format((float)$u['itbis'], 2) : '—' ?>
-                    </td>
-                    <td class="px-4 py-2"><?= $statusBadge ?></td>
-                    <td class="px-4 py-2 text-right whitespace-nowrap">
-                        <?php if (in_array($u['status'], ['error','extracted'], true)): ?>
-                        <form method="POST" class="inline">
-                            <input type="hidden" name="action" value="reprocess">
-                            <input type="hidden" name="upload_id" value="<?= $u['id'] ?>">
-                            <button type="submit" class="text-blue-600 hover:text-blue-800 text-xs font-semibold">Reprocesar</button>
-                        </form>
-                        <?php endif; ?>
-                        <?php if ($u['status'] !== 'approved'): ?>
-                        <form method="POST" class="inline" onsubmit="return confirm('Eliminar esta factura?')">
-                            <input type="hidden" name="action" value="delete_upload">
-                            <input type="hidden" name="upload_id" value="<?= $u['id'] ?>">
-                            <button type="submit" class="ml-2 text-red-500 hover:text-red-700 text-xs font-semibold">Eliminar</button>
-                        </form>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+    <div class="cu-rows" id="cuRows">
+        <?php foreach ($uploads as $u):
+            $statusKey = $u['status'] === 'approved' ? 'approved' : ($u['status'] === 'extracted' ? 'extracted' : ($u['status'] === 'error' ? 'error' : 'pending'));
+            $statusBadge = match($u['status']) {
+                'uploaded'   => '<span class="cu-pill cu-pill-slate">En cola</span>',
+                'processing' => '<span class="cu-pill cu-pill-blue">Procesando…</span>',
+                'extracted'  => '<span class="cu-pill cu-pill-amber">Por validar</span>',
+                'approved'   => '<span class="cu-pill cu-pill-emerald">Aprobada</span>',
+                'rejected'   => '<span class="cu-pill cu-pill-slate">Rechazada</span>',
+                'error'      => '<span class="cu-pill cu-pill-red">Error</span>',
+                default      => '<span class="cu-pill cu-pill-slate">' . htmlspecialchars($u['status']) . '</span>',
+            };
+            $docTypePill = '';
+            if ($u['ai_doc_type'] === 'venta') $docTypePill = '<span class="cu-pill cu-pill-blue">607 Venta</span>';
+            elseif ($u['ai_doc_type'] === 'compra') $docTypePill = '<span class="cu-pill cu-pill-indigo">606 Compra</span>';
+            $thumbHref = 'uploads/invoices/' . htmlspecialchars($u['filename']);
+            $isImage = strpos($u['mime_type'], 'image/') === 0;
+            $confidence = (float)($u['confidence'] ?? 0);
+            $confPct = round($confidence * 100);
+        ?>
+        <article class="cu-row" data-status="<?= $statusKey ?>">
+            <a href="<?= $thumbHref ?>" target="_blank" class="cu-thumb">
+                <?php if ($isImage): ?>
+                <img src="<?= $thumbHref ?>" alt="" loading="lazy">
+                <?php else: ?>
+                <svg class="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                <?php endif; ?>
+            </a>
+
+            <div class="cu-row-main">
+                <div class="cu-row-header">
+                    <p class="cu-row-title">
+                        <?= $u['extraction_id'] ? htmlspecialchars($u['counterparty_name'] ?: $u['original_name']) : htmlspecialchars($u['original_name']) ?>
+                    </p>
+                    <?= $statusBadge ?>
+                    <?= $docTypePill ?>
+                </div>
+                <div class="cu-row-meta">
+                    <?php if ($u['extraction_id']): ?>
+                    <span class="cu-meta-item"><span class="cu-meta-label">NCF</span> <span class="font-mono"><?= htmlspecialchars($u['ncf'] ?: '—') ?></span></span>
+                    <span class="cu-meta-item"><span class="cu-meta-label">RNC</span> <span class="font-mono"><?= htmlspecialchars($u['rnc'] ?: '—') ?></span></span>
+                    <span class="cu-meta-item"><span class="cu-meta-label"><?= $u['date_doc'] ? date('d/m/Y', strtotime($u['date_doc'])) : '—' ?></span></span>
+                    <?php if ($confidence > 0): ?>
+                    <span class="cu-meta-item cu-conf cu-conf-<?= $confidence >= 0.85 ? 'good' : ($confidence >= 0.6 ? 'mid' : 'low') ?>">
+                        IA <?= $confPct ?>%
+                    </span>
+                    <?php endif; ?>
+                    <?php elseif ($u['status'] === 'error'): ?>
+                    <span class="cu-meta-error truncate"><?= htmlspecialchars($u['error_message'] ?? 'Error') ?></span>
+                    <?php else: ?>
+                    <span class="cu-meta-label"><?= date('d/m/Y H:i', strtotime($u['created_at'])) ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <?php if ($u['extraction_id'] && $u['total']): ?>
+            <div class="cu-row-amount">
+                <p class="cu-amount-val">RD$ <?= number_format((float)$u['total'], 2) ?></p>
+                <p class="cu-amount-itbis">ITBIS <?= number_format((float)$u['itbis'], 2) ?></p>
+            </div>
+            <?php endif; ?>
+
+            <div class="cu-row-actions">
+                <?php if (in_array($u['status'], ['error','extracted'], true)): ?>
+                <form method="POST" class="inline-flex">
+                    <input type="hidden" name="action" value="reprocess">
+                    <input type="hidden" name="upload_id" value="<?= $u['id'] ?>">
+                    <button type="submit" class="cu-action-btn cu-action-btn-blue" title="Reprocesar con IA">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    </button>
+                </form>
+                <?php endif; ?>
+                <?php if ($u['status'] !== 'approved'): ?>
+                <form method="POST" class="inline-flex" onsubmit="return confirm('Eliminar esta factura?')">
+                    <input type="hidden" name="action" value="delete_upload">
+                    <input type="hidden" name="upload_id" value="<?= $u['id'] ?>">
+                    <button type="submit" class="cu-action-btn cu-action-btn-red" title="Eliminar">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
+                    </button>
+                </form>
+                <?php endif; ?>
+            </div>
+        </article>
+        <?php endforeach; ?>
     </div>
     <?php endif; ?>
 </div>
 
+<style>
+    /* === Client uploads (modulo del cliente) === */
+    .cu-flash { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-radius: 14px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+    .cu-flash-success { background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
+    .cu-flash-error   { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
+
+    /* Period bar */
+    .cu-period-bar { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; background: #fff; border: 1px solid #EEF0F2; border-radius: 22px; margin-bottom: 16px; }
+    .cu-period-nav { display: flex; align-items: center; gap: 10px; }
+    .cu-nav-btn { width: 38px; height: 38px; border-radius: 12px; background: #F4F4F5; color: #475569; display: inline-flex; align-items: center; justify-content: center; transition: all .15s ease; }
+    .cu-nav-btn:hover { background: #E5E7EB; color: #0F172A; }
+    .cu-period-label { display: flex; flex-direction: column; min-width: 140px; }
+    .cu-period-month { font-size: 18px; font-weight: 800; color: #0F172A; line-height: 1.1; }
+    .cu-period-sub { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; margin-top: 2px; }
+    .cu-stats { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+    .cu-stat { padding: 10px 12px; border-radius: 14px; background: #F8FAFC; }
+    .cu-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748B; }
+    .cu-stat-val { font-size: 15px; font-weight: 800; color: #0F172A; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .cu-stat-val-blue { color: #1D4ED8; }
+    .cu-stat-red  { background: #FEF2F2; }
+    .cu-stat-red  .cu-stat-label { color: #B91C1C; }
+    .cu-stat-red  .cu-stat-val { color: #B91C1C; }
+    .cu-stat-green { background: #ECFDF5; }
+    .cu-stat-green .cu-stat-label { color: #047857; }
+    .cu-stat-green .cu-stat-val { color: #047857; }
+    @media (min-width: 768px) {
+        .cu-period-bar { flex-direction: row; align-items: center; gap: 24px; }
+        .cu-stats { grid-template-columns: repeat(4, minmax(120px,1fr)); flex: 1; }
+    }
+
+    /* Upload hero */
+    .cu-upload-hero { background: #fff; border: 1px solid #EEF0F2; border-radius: 22px; padding: 20px; margin-bottom: 16px; display: grid; gap: 16px; grid-template-columns: 1fr; }
+    .cu-upload-info { display: flex; gap: 14px; align-items: flex-start; }
+    .cu-upload-icon { width: 44px; height: 44px; border-radius: 14px; background: linear-gradient(135deg, #DBEAFE, #E0E7FF); color: #1D4ED8; display: inline-flex; align-items: center; justify-content: center; shrink-0: 0; flex-shrink: 0; }
+    .cu-upload-title { font-size: 16px; font-weight: 800; color: #0F172A; }
+    .cu-upload-desc { font-size: 13px; color: #64748B; line-height: 1.55; margin-top: 4px; }
+    .cu-upload-pills { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .cu-mini-pill { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: #F1F5F9; color: #475569; }
+    .cu-upload-form { display: flex; flex-direction: column; gap: 12px; }
+    .cu-dropzone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 16px; border: 2px dashed #CBD5E1; border-radius: 18px; background: linear-gradient(180deg, #FAFAFA, #F4F4F5); cursor: pointer; transition: all .2s ease; }
+    .cu-dropzone:hover, .cu-dropzone.is-drag { border-color: #2563EB; background: linear-gradient(180deg, #EFF6FF, #DBEAFE); }
+    .cu-dropzone-icon { color: #2563EB; }
+    .cu-dropzone-title { font-size: 14px; font-weight: 700; color: #0F172A; }
+    .cu-dropzone-sub   { font-size: 12px; color: #64748B; }
+    .cu-dropzone-summary { font-size: 12px; font-weight: 600; color: #1D4ED8; margin-top: 4px; padding: 4px 10px; border-radius: 999px; background: #DBEAFE; }
+    .cu-upload-controls { display: flex; gap: 8px; }
+    .cu-select { flex: 1; padding: 11px 14px; border-radius: 12px; border: 1.5px solid #E5E7EB; background: #fff; font-size: 13px; font-weight: 600; color: #0F172A; }
+    .cu-submit-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 22px; background: #0F172A; color: #fff; border-radius: 12px; font-size: 13px; font-weight: 700; transition: all .15s ease; white-space: nowrap; }
+    .cu-submit-btn:hover { background: #1E293B; transform: translateY(-1px); box-shadow: 0 8px 20px rgba(15,23,42,0.18); }
+    .cu-submit-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; box-shadow: none; }
+    @media (min-width: 768px) {
+        .cu-upload-hero { grid-template-columns: 1.1fr 1fr; align-items: center; }
+    }
+
+    /* List */
+    .cu-list { background: #fff; border: 1px solid #EEF0F2; border-radius: 22px; overflow: hidden; }
+    .cu-list-head { padding: 14px 18px; border-bottom: 1px solid #F4F4F5; display: flex; flex-direction: column; gap: 12px; }
+    .cu-list-title { font-size: 15px; font-weight: 800; color: #0F172A; }
+    .cu-list-sub   { font-size: 11px; color: #94A3B8; }
+    .cu-tabs { display: flex; gap: 6px; overflow-x: auto; }
+    .cu-tabs::-webkit-scrollbar { display: none; }
+    .cu-tab { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; background: #F4F4F5; color: #475569; font-size: 12px; font-weight: 700; transition: all .15s ease; white-space: nowrap; cursor: pointer; }
+    .cu-tab:hover { background: #E5E7EB; color: #0F172A; }
+    .cu-tab.is-active { background: #0F172A; color: #fff; }
+    .cu-tab-count { padding: 1px 7px; border-radius: 999px; background: rgba(255,255,255,0.18); font-size: 10px; }
+    .cu-tab:not(.is-active) .cu-tab-count { background: rgba(0,0,0,0.06); }
+    @media (min-width: 768px) {
+        .cu-list-head { flex-direction: row; align-items: center; justify-content: space-between; }
+    }
+
+    .cu-empty { padding: 60px 20px; text-align: center; }
+    .cu-empty-icon { width: 56px; height: 56px; border-radius: 50%; background: #F4F4F5; color: #94A3B8; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+    .cu-empty-title { font-size: 14px; font-weight: 700; color: #0F172A; }
+    .cu-empty-sub { font-size: 12px; color: #94A3B8; margin-top: 4px; }
+
+    .cu-rows { display: flex; flex-direction: column; }
+    .cu-row { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-bottom: 1px solid #F4F4F5; transition: background .15s ease; }
+    .cu-row:hover { background: #FAFAFA; }
+    .cu-row:last-child { border-bottom: 0; }
+    .cu-row[hidden] { display: none; }
+    .cu-thumb { width: 48px; height: 48px; border-radius: 12px; background: #F4F4F5; border: 1px solid #E5E7EB; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; transition: transform .15s ease; flex-shrink: 0; }
+    .cu-thumb:hover { transform: scale(1.06); }
+    .cu-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .cu-row-main { flex: 1; min-width: 0; }
+    .cu-row-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+    .cu-row-title { font-size: 13px; font-weight: 700; color: #0F172A; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cu-row-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #64748B; }
+    .cu-meta-item { display: inline-flex; align-items: center; gap: 5px; }
+    .cu-meta-label { font-size: 10px; color: #94A3B8; font-weight: 600; letter-spacing: 0.03em; }
+    .cu-meta-error { color: #DC2626; font-weight: 600; max-width: 380px; }
+    .cu-conf { padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 10px; }
+    .cu-conf-good { background: #ECFDF5; color: #047857; }
+    .cu-conf-mid  { background: #FEF3C7; color: #B45309; }
+    .cu-conf-low  { background: #FEE2E2; color: #B91C1C; }
+
+    .cu-row-amount { text-align: right; flex-shrink: 0; }
+    .cu-amount-val { font-size: 14px; font-weight: 800; color: #0F172A; font-variant-numeric: tabular-nums; }
+    .cu-amount-itbis { font-size: 10px; color: #64748B; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+    .cu-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .cu-action-btn { width: 34px; height: 34px; border-radius: 10px; background: #F4F4F5; color: #64748B; display: inline-flex; align-items: center; justify-content: center; transition: all .15s ease; }
+    .cu-action-btn-blue:hover { background: #DBEAFE; color: #1D4ED8; }
+    .cu-action-btn-red:hover  { background: #FEE2E2; color: #B91C1C; }
+
+    .cu-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; letter-spacing: 0.02em; }
+    .cu-pill::before { content: ''; width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+    .cu-pill-emerald { color: #15803D; background: #DCFCE7; }
+    .cu-pill-amber   { color: #B45309; background: #FEF3C7; }
+    .cu-pill-red     { color: #DC2626; background: #FEE2E2; }
+    .cu-pill-blue    { color: #1D4ED8; background: #DBEAFE; }
+    .cu-pill-indigo  { color: #4F46E5; background: #E0E7FF; }
+    .cu-pill-slate   { color: #475569; background: #F1F5F9; }
+
+    @media (max-width: 640px) {
+        .cu-row { flex-wrap: wrap; }
+        .cu-row-amount { order: 3; width: 100%; text-align: left; padding-left: 62px; }
+        .cu-row-title { max-width: 220px; }
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fadeIn { animation: fadeIn .3s ease; }
+</style>
+
 <script>
+// Upload form interactions
 (function() {
     const input = document.getElementById('fileInput');
     const summary = document.getElementById('fileSummary');
@@ -368,16 +523,16 @@ include 'components/layout_start.php';
         }
         let totalKb = 0;
         for (const f of input.files) totalKb += f.size;
-        summary.textContent = input.files.length + ' archivo(s) seleccionados · ' + Math.round(totalKb / 1024) + ' KB';
+        summary.textContent = input.files.length + ' archivo(s) · ' + Math.round(totalKb / 1024) + ' KB · listos para enviar';
         summary.classList.remove('hidden');
     }
     input.addEventListener('change', refreshSummary);
 
     ['dragenter','dragover'].forEach(ev => {
-        dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.add('border-blue-400','bg-blue-50/40'); });
+        dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.add('is-drag'); });
     });
     ['dragleave','drop'].forEach(ev => {
-        dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.remove('border-blue-400','bg-blue-50/40'); });
+        dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.remove('is-drag'); });
     });
     dropZone.addEventListener('drop', function(e){
         if (e.dataTransfer && e.dataTransfer.files) {
@@ -388,9 +543,28 @@ include 'components/layout_start.php';
 
     form.addEventListener('submit', function(){
         if (input.files && input.files.length > 0) {
-            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity=".25"/><path d="M22 12a10 10 0 01-10 10" stroke="currentColor" stroke-width="3" fill="none"/></svg> Procesando con IA...';
+            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity=".25"/><path d="M22 12a10 10 0 01-10 10" stroke="currentColor" stroke-width="3" fill="none"/></svg> Procesando…';
             btn.disabled = true;
         }
+    });
+})();
+
+// Tabs filter
+(function() {
+    const tabs = document.querySelectorAll('.cu-tab');
+    const rows = document.querySelectorAll('.cu-row');
+    if (!tabs.length || !rows.length) return;
+    tabs.forEach(t => {
+        t.addEventListener('click', () => {
+            tabs.forEach(x => x.classList.remove('is-active'));
+            t.classList.add('is-active');
+            const f = t.dataset.filter;
+            rows.forEach(r => {
+                const status = r.dataset.status;
+                const show = (f === 'all') || (status === f);
+                r.hidden = !show;
+            });
+        });
     });
 })();
 </script>

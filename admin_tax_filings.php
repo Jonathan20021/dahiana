@@ -569,82 +569,158 @@ $it1Composition = $it1Rows->fetchAll();
         <p class="text-xs text-slate-500"><?= count($filingList) ?> cliente(s) con datos</p>
     </div>
     <?php if (empty($filingList)): ?>
-    <div class="py-12 text-center text-sm text-slate-400">
-        Sin formularios este mes. Crea uno seleccionando un cliente abajo.
+    <div class="tf-empty">
+        <div class="tf-empty-icon">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+        <p class="tf-empty-title">Sin formularios este periodo</p>
+        <p class="tf-empty-sub">
+            <?php if ($type === 'IT-1'): ?>
+            Cuando tus clientes suban facturas y las apruebes, el IT-1 se genera solo.
+            <?php else: ?>
+            Crea uno seleccionando un cliente abajo o pide a los clientes que suban sus facturas.
+            <?php endif; ?>
+        </p>
     </div>
     <?php else: ?>
-    <ul class="divide-y divide-stone-100">
-        <?php foreach ($filingList as $f): ?>
-        <li class="px-5 py-3.5 hover:bg-stone-50/60 transition-colors">
-            <div class="flex flex-col lg:flex-row lg:items-center gap-3">
-                <div class="flex items-center gap-3 lg:flex-1 min-w-0">
-                    <div class="h-10 w-10 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center text-xs font-bold text-slate-700 shrink-0">
-                        <?= htmlspecialchars(substr(strtoupper($f['client_name']), 0, 1)) ?>
-                    </div>
-                    <div class="min-w-0">
-                        <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $f['client_id'] ?>" class="text-sm font-bold text-slate-900 hover:text-blue-600 truncate block"><?= htmlspecialchars($f['client_name']) ?></a>
-                        <p class="text-[11px] text-slate-500">RNC <?= htmlspecialchars($f['rnc'] ?: 'N/A') ?></p>
-                    </div>
+    <div class="tf-rows">
+        <?php foreach ($filingList as $f):
+            $isSent = $f['status'] === 'enviado';
+            $isIT1 = $type === 'IT-1';
+            $rowBalance = $isIT1 ? ((float)$f['total_itbis'] - (float)$f['total_amount']) : 0;
+        ?>
+        <article class="tf-row">
+            <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $f['client_id'] ?>" class="tf-row-link">
+                <div class="tf-avatar">
+                    <?= htmlspecialchars(substr(strtoupper($f['client_name']), 0, 1)) ?>
                 </div>
-                <?php if ($type === 'IT-1'):
-                    $rowBalance = (float)$f['total_itbis'] - (float)$f['total_amount'];
-                ?>
-                <div class="grid grid-cols-3 gap-3 lg:w-[26rem] shrink-0 text-xs">
-                    <div>
-                        <p class="text-[10px] uppercase tracking-wider text-blue-600 font-bold">ITBIS Pagado</p>
-                        <p class="font-extrabold text-blue-700">RD$ <?= number_format((float)$f['total_amount'], 0) ?></p>
+                <div class="tf-main">
+                    <div class="tf-name-row">
+                        <p class="tf-name"><?= htmlspecialchars($f['client_name']) ?></p>
+                        <?php if ($f['business_name']): ?>
+                        <span class="tf-business">· <?= htmlspecialchars($f['business_name']) ?></span>
+                        <?php endif; ?>
                     </div>
-                    <div>
-                        <p class="text-[10px] uppercase tracking-wider text-emerald-600 font-bold">ITBIS Cobrado</p>
-                        <p class="font-extrabold text-emerald-700">RD$ <?= number_format((float)$f['total_itbis'], 0) ?></p>
-                    </div>
-                    <div>
-                        <p class="text-[10px] uppercase tracking-wider <?= $rowBalance > 0 ? 'text-red-600' : 'text-emerald-600' ?> font-bold"><?= $rowBalance > 0 ? 'A pagar' : 'A favor' ?></p>
-                        <p class="font-extrabold <?= $rowBalance > 0 ? 'text-red-700' : 'text-emerald-700' ?>">RD$ <?= number_format(abs($rowBalance), 0) ?></p>
-                    </div>
+                    <p class="tf-rnc">
+                        RNC <span class="font-mono"><?= htmlspecialchars($f['rnc'] ?: 'N/A') ?></span>
+                    </p>
                 </div>
-                <?php else: ?>
-                <div class="grid grid-cols-3 gap-3 lg:w-96 shrink-0 text-xs">
-                    <div>
-                        <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Lineas</p>
-                        <p class="font-extrabold text-slate-900"><?= (int)$f['total_records'] ?></p>
-                    </div>
-                    <div>
-                        <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Monto</p>
-                        <p class="font-extrabold text-slate-900">RD$ <?= number_format((float)$f['total_amount'], 0) ?></p>
-                    </div>
-                    <div>
-                        <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">ITBIS</p>
-                        <p class="font-extrabold text-slate-900">RD$ <?= number_format((float)$f['total_itbis'], 0) ?></p>
-                    </div>
+            </a>
+
+            <?php if ($isIT1): ?>
+            <div class="tf-metrics tf-metrics-it1">
+                <div class="tf-metric">
+                    <p class="tf-metric-label">ITBIS Pagado</p>
+                    <p class="tf-metric-val tf-blue">RD$ <?= number_format((float)$f['total_amount'], 0) ?></p>
                 </div>
-                <?php endif; ?>
-                <div class="flex items-center gap-2 shrink-0">
-                    <?php if ($f['status'] === 'enviado'): ?>
-                    <span class="badge-dot badge-green">Enviado</span>
-                    <?php else: ?>
-                    <span class="badge-dot badge-amber">Borrador</span>
-                    <?php endif; ?>
-                    <button type="button"
-                            onclick="openEditFiling(<?= $f['id'] ?>, '<?= htmlspecialchars(addslashes($f['client_name']), ENT_QUOTES) ?>', '<?= htmlspecialchars($f['status'], ENT_QUOTES) ?>', <?= json_encode($f['notes'] ?? '') ?>)"
-                            class="icon-btn !w-8 !h-8 hover:!bg-blue-100 hover:!text-blue-700" title="Editar">
-                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                    </button>
-                    <form method="POST" class="inline" onsubmit="return confirm('Eliminar este formulario y todas sus lineas? Esta accion no se puede deshacer.')">
-                        <input type="hidden" name="action" value="delete_filing">
-                        <input type="hidden" name="filing_id" value="<?= $f['id'] ?>">
-                        <button type="submit" class="icon-btn !w-8 !h-8 hover:!bg-red-100 hover:!text-red-700" title="Eliminar">
-                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
-                        </button>
-                    </form>
-                    <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $f['client_id'] ?>" class="btn-dark !text-xs !py-1.5 !px-3">Abrir</a>
+                <div class="tf-metric">
+                    <p class="tf-metric-label">ITBIS Cobrado</p>
+                    <p class="tf-metric-val tf-green">RD$ <?= number_format((float)$f['total_itbis'], 0) ?></p>
+                </div>
+                <div class="tf-metric tf-balance <?= $rowBalance > 0 ? 'tf-balance-pay' : 'tf-balance-credit' ?>">
+                    <p class="tf-metric-label"><?= $rowBalance > 0 ? 'A pagar' : 'A favor' ?></p>
+                    <p class="tf-metric-val">RD$ <?= number_format(abs($rowBalance), 0) ?></p>
                 </div>
             </div>
-        </li>
+            <?php else: ?>
+            <div class="tf-metrics">
+                <div class="tf-metric">
+                    <p class="tf-metric-label">Lineas</p>
+                    <p class="tf-metric-val"><?= (int)$f['total_records'] ?></p>
+                </div>
+                <div class="tf-metric">
+                    <p class="tf-metric-label">Monto</p>
+                    <p class="tf-metric-val">RD$ <?= number_format((float)$f['total_amount'], 0) ?></p>
+                </div>
+                <div class="tf-metric">
+                    <p class="tf-metric-label">ITBIS</p>
+                    <p class="tf-metric-val">RD$ <?= number_format((float)$f['total_itbis'], 0) ?></p>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <div class="tf-actions">
+                <?php if ($isSent): ?>
+                <span class="tf-status tf-status-sent">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                    Enviado
+                </span>
+                <?php else: ?>
+                <span class="tf-status tf-status-draft">Borrador</span>
+                <?php endif; ?>
+                <button type="button"
+                        onclick="openEditFiling(<?= $f['id'] ?>, '<?= htmlspecialchars(addslashes($f['client_name']), ENT_QUOTES) ?>', '<?= htmlspecialchars($f['status'], ENT_QUOTES) ?>', <?= json_encode($f['notes'] ?? '') ?>)"
+                        class="tf-icon-btn" title="Editar estado y notas">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+                <form method="POST" class="inline-flex" onsubmit="return confirm('Eliminar este formulario y todas sus lineas? Esta accion no se puede deshacer.')">
+                    <input type="hidden" name="action" value="delete_filing">
+                    <input type="hidden" name="filing_id" value="<?= $f['id'] ?>">
+                    <button type="submit" class="tf-icon-btn tf-icon-danger" title="Eliminar formulario">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
+                    </button>
+                </form>
+                <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $f['client_id'] ?>" class="tf-open-btn">
+                    Abrir
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                </a>
+            </div>
+        </article>
         <?php endforeach; ?>
-    </ul>
+    </div>
     <?php endif; ?>
 </div>
+
+<style>
+    /* === Tax Filings list === */
+    .tf-empty { padding: 60px 20px; text-align: center; }
+    .tf-empty-icon { width: 56px; height: 56px; border-radius: 50%; background: #F4F4F5; color: #94A3B8; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+    .tf-empty-title { font-size: 14px; font-weight: 700; color: #0F172A; }
+    .tf-empty-sub { font-size: 12px; color: #94A3B8; margin-top: 4px; max-width: 380px; margin-left: auto; margin-right: auto; }
+
+    .tf-rows { display: flex; flex-direction: column; }
+    .tf-row { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-bottom: 1px solid #F4F4F5; transition: background .15s ease; }
+    .tf-row:hover { background: #FAFAFA; }
+    .tf-row:last-child { border-bottom: 0; }
+    .tf-row-link { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+    .tf-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #F1F5F9, #E5E7EB); border: 1px solid #E5E7EB; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #475569; flex-shrink: 0; }
+    .tf-main { min-width: 0; flex: 1; }
+    .tf-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .tf-name { font-size: 14px; font-weight: 700; color: #0F172A; }
+    .tf-row:hover .tf-name { color: #1D4ED8; }
+    .tf-business { font-size: 12px; color: #64748B; }
+    .tf-rnc { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+
+    .tf-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; min-width: 280px; }
+    .tf-metrics-it1 { min-width: 360px; }
+    .tf-metric { padding: 6px 10px; border-radius: 12px; background: #F8FAFC; text-align: left; }
+    .tf-metric-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; }
+    .tf-metric-val { font-size: 14px; font-weight: 800; color: #0F172A; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .tf-blue { color: #1D4ED8; }
+    .tf-green { color: #047857; }
+    .tf-balance-pay { background: #FEF2F2; }
+    .tf-balance-pay .tf-metric-label { color: #B91C1C; }
+    .tf-balance-pay .tf-metric-val { color: #B91C1C; }
+    .tf-balance-credit { background: #ECFDF5; }
+    .tf-balance-credit .tf-metric-label { color: #047857; }
+    .tf-balance-credit .tf-metric-val { color: #047857; }
+
+    .tf-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .tf-status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .tf-status-sent { background: #DCFCE7; color: #15803D; }
+    .tf-status-draft { background: #FEF3C7; color: #B45309; }
+    .tf-icon-btn { width: 32px; height: 32px; border-radius: 10px; background: #F4F4F5; color: #64748B; display: inline-flex; align-items: center; justify-content: center; transition: all .15s ease; }
+    .tf-icon-btn:hover { background: #DBEAFE; color: #1D4ED8; }
+    .tf-icon-danger:hover { background: #FEE2E2; color: #B91C1C; }
+    .tf-open-btn { display: inline-flex; align-items: center; gap: 4px; padding: 7px 14px; border-radius: 11px; background: #0F172A; color: #fff; font-size: 12px; font-weight: 700; transition: all .15s ease; }
+    .tf-open-btn:hover { background: #1E293B; }
+
+    @media (max-width: 1024px) {
+        .tf-row { flex-wrap: wrap; }
+        .tf-metrics { width: 100%; min-width: 0; }
+        .tf-actions { width: 100%; justify-content: flex-end; }
+    }
+</style>
 
 <!-- Edit filing modal -->
 <div id="editFilingModal" class="fixed inset-0 z-50 hidden">
