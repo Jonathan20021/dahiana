@@ -15,12 +15,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         'whatsapp_invoice_template','whatsapp_request_template',
         'resend_api_key','email_from','email_from_name','email_reply_to',
         'openai_api_key','openai_model','openai_max_size_mb','openai_auto_approve_threshold',
+        'openai_secondary_model',
         'telegram_bot_token','telegram_bot_username','telegram_webhook_secret',
     ];
     $boolFields = [
         'email_enabled','notify_welcome','notify_invoice','notify_invoice_paid',
         'notify_request','notify_status','notify_comment','notify_invoice_approved',
-        'openai_enabled','openai_auto_process',
+        'openai_enabled','openai_auto_process','openai_consensus_enabled',
         'telegram_enabled',
     ];
 
@@ -306,6 +307,22 @@ include 'components/layout_start.php';
                 <div>
                     <label class="field-label">Tamano max. por foto (MB)</label>
                     <input type="number" min="1" max="20" name="openai_max_size_mb" value="<?= htmlspecialchars(getSetting('openai_max_size_mb', '12')) ?>" class="field text-sm">
+                </div>
+                <div class="sm:col-span-3 rounded-2xl border border-stone-100 p-3 bg-blue-50/30">
+                    <div class="flex items-start gap-3 mb-2">
+                        <label class="flex items-start gap-3 cursor-pointer flex-1">
+                            <input type="checkbox" name="openai_consensus_enabled" value="1" <?= getSetting('openai_consensus_enabled', '1') === '1' ? 'checked' : '' ?> class="mt-1">
+                            <span>
+                                <span class="text-sm font-semibold text-slate-900">Validacion cruzada multi-modelo (recomendado)</span>
+                                <span class="block text-[11px] text-slate-500">Dos modelos extraen en paralelo y solo se conserva el dato donde ambos coinciden. Si difieren, se mantiene el valor original y se baja la confianza.</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="mt-2 ml-7">
+                        <label class="field-label">Modelo de validacion (secundario)</label>
+                        <input type="text" name="openai_secondary_model" value="<?= htmlspecialchars(getSetting('openai_secondary_model', 'gpt-4o-mini')) ?>" class="field text-sm" placeholder="gpt-4o-mini">
+                        <p class="mt-1 text-[11px] text-slate-400">Sugerido: <code>gpt-4o-mini</code> (rapido, economico). Puedes usar otro modelo con vision (<code>gpt-4.1</code>, <code>gpt-5</code>) si quieres maxima precision.</p>
+                    </div>
                 </div>
                 <div>
                     <label class="field-label">Auto-aprobar si confianza es ≥</label>

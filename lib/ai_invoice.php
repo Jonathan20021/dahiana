@@ -147,6 +147,8 @@ function bootstrapAiInvoiceSchema() {
             'openai_auto_process' => '1',
             'openai_auto_approve_threshold' => '0',  // 0 = nunca auto-aprobar. 0.95 = aprobar si confianza >= 95%
             'notify_invoice_approved' => '1',         // emails al cliente al aprobar
+            'openai_consensus_enabled' => '1',        // valida con segundo modelo en paralelo
+            'openai_secondary_model'   => 'gpt-4o-mini', // modelo de validacion cruzada
             'telegram_enabled' => '0',
             'telegram_bot_token' => '',
             'telegram_bot_username' => '',
@@ -317,7 +319,16 @@ function aiSystemPrompt() {
 
     return implode("\n", [
         "Eres un asistente fiscal experto en la Republica Dominicana (DGII).",
-        "Recibiras la foto de un comprobante fiscal (factura, recibo, conduce, nota de credito, NCF) y debes extraer SIEMPRE todos los datos relevantes para los formatos 606 (Compras), 607 (Ventas) e IT-1 (ITBIS).",
+        "Recibiras la foto de un comprobante fiscal (factura, recibo, conduce, nota de credito, NCF).",
+        "Tu trabajo es EXTRAER LITERALMENTE lo que aparece en el documento. NO INVENTAR.",
+        "",
+        "=== REGLA DE ORO ===",
+        "Si NO puedes leer un campo con certeza, devuelve string vacio (\"\") o 0 numerico.",
+        "ES PREFERIBLE un campo vacio que un campo inventado.",
+        "La consultora puede llenar datos faltantes en segundos, pero corregir datos inventados toma horas y genera multas DGII.",
+        "Nunca calcules valores que no esten escritos en la factura. Solo extrae lo que ves.",
+        "Si el ITBIS aparece como '0.00' explicitamente, devuelve 0.00 (es un comprobante exento).",
+        "Si el ITBIS NO aparece en la factura, devuelve 0 y baja la confianza.",
         "",
         "=== REGLAS DE EXTRACCION ===",
         "1. NCF (Numero de Comprobante Fiscal): exactamente 11 caracteres alfanumericos. Empieza con una letra y dos digitos (B01, B02, B03, B04, B11, B13, B14, B15, B16, B17) o con E31/E32/E33/E34/E41/E43/E44/E45/E46/E47 para e-CF. Si lees algo como 'B0100000123' o 'E310000164476', son NCFs validos. Si no encuentras NCF formal pero ves un numero de factura, ponlo de todas formas (la consultora puede corregir).",
@@ -477,30 +488,15 @@ function aiNormalizeExtraction(array $data) {
         $data[$k] = round((float)($data[$k] ?? 0), 2);
     }
 
-    // Coherence: subtotal + itbis + propina + transporte ~= total (tolerance 2 RD$).
+    // Coherencia: SOLO marcamos warnings. NO sobrescribimos valores.
+    // La consultora prefiere ver lo que la IA realmente extrajo, no datos inventados.
     $reconstructed = round(($data['subtotal'] + $data['itbis'] + $data['propina_legal'] + $data['transporte']), 2);
     if ($data['total'] > 0 && abs($reconstructed - $data['total']) > 2.00) {
-        // If only total is reliable, recompute subtotal from total
-        if ($data['itbis'] === 0.0 && $data['subtotal'] > 0) {
-            // Maybe ITBIS missed; assume 18%
-            $maybeItbis = round($data['subtotal'] * 0.18, 2);
-            if (abs(($data['subtotal'] + $maybeItbis) - $data['total']) <= 2.00) {
-                $data['itbis'] = $maybeItbis;
-                $warnings[] = 'ITBIS recalculado a 18% del subtotal.';
-            }
-        } elseif ($data['subtotal'] === 0.0 && $data['total'] > 0) {
-            // Reverse from total
-            $data['subtotal'] = round($data['total'] / 1.18, 2);
-            $data['itbis']    = round($data['total'] - $data['subtotal'], 2);
-            $warnings[] = 'Subtotal/ITBIS recalculados desde el total (asumiendo 18%).';
-        } else {
-            $warnings[] = 'Suma de componentes (' . number_format($reconstructed,2) . ') no coincide con total (' . number_format($data['total'],2) . ').';
-        }
+        $diff = round(abs($reconstructed - $data['total']), 2);
+        $warnings[] = 'Inconsistencia: subtotal+ITBIS+propina+transporte (' . number_format($reconstructed, 2) . ') vs total (' . number_format($data['total'], 2) . '). Diferencia RD$ ' . number_format($diff, 2);
     }
-
-    // If total is 0 but subtotal+itbis>0, compute total
     if ($data['total'] === 0.0 && ($data['subtotal'] > 0 || $data['itbis'] > 0)) {
-        $data['total'] = round($data['subtotal'] + $data['itbis'] + $data['propina_legal'] + $data['transporte'], 2);
+        $warnings[] = 'Total no detectado; revisar manualmente.';
     }
 
     // Normalize doc_type
@@ -553,13 +549,33 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
     if (!empty($clientHint['economic_activity'])) $hintLines[] = "Actividad economica: " . $clientHint['economic_activity'];
     $hintBlock = empty($hintLines) ? '' : "\n\nContexto del cliente:\n" . implode("\n", $hintLines);
 
-    $payload = [
-        'model' => $cfg['model'],
+    // Decision: usar consensus multi-modelo o single-model
+    $consensusEnabled = getSetting('openai_consensus_enabled', '1') === '1';
+    $secondaryModel = trim(getSetting('openai_secondary_model', 'gpt-4o-mini')) ?: 'gpt-4o-mini';
+
+    if ($consensusEnabled && $secondaryModel && $secondaryModel !== $cfg['model']) {
+        return aiExtractWithConsensus($enc['data_url'], $hintBlock, $cfg, $secondaryModel);
+    }
+
+    // Single-model path
+    $payload = aiBuildPayload($cfg['model'], $enc['data_url'], $hintBlock);
+    $r = aiCallOpenAI($payload, $cfg['api_key'], 2);
+    if (!$r['ok']) return $r;
+    $data = aiNormalizeExtraction($r['data']);
+    return ['ok' => true, 'data' => $data, 'tokens' => $r['tokens'], 'raw' => $r['raw']];
+}
+
+/**
+ * Construye el payload de la API para un modelo dado.
+ */
+function aiBuildPayload($model, $dataUrl, $hintBlock) {
+    return [
+        'model' => $model,
         'messages' => [
             ['role' => 'system', 'content' => aiSystemPrompt()],
             ['role' => 'user', 'content' => [
-                ['type' => 'text', 'text' => "Extrae TODOS los datos de esta factura para los formularios 606, 607 e IT-1 de la DGII. Si el documento no tiene NCF formal, ponlo vacio. Si algun monto es 0 o no aparece, ponlo 0. Devuelve solo el JSON estricto." . $hintBlock],
-                ['type' => 'image_url', 'image_url' => ['url' => $enc['data_url'], 'detail' => 'high']],
+                ['type' => 'text', 'text' => "Extrae LITERALMENTE los datos de esta factura para los formularios 606, 607 e IT-1 de la DGII. Si un campo NO aparece claramente en la imagen, dejalo vacio o 0. NO INVENTES valores. Devuelve solo el JSON estricto." . $hintBlock],
+                ['type' => 'image_url', 'image_url' => ['url' => $dataUrl, 'detail' => 'high']],
             ]],
         ],
         'response_format' => [
@@ -573,8 +589,12 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
         'temperature' => 0.0,
         'max_tokens'  => 1500,
     ];
+}
 
-    $maxAttempts = 2;
+/**
+ * Llamada bloqueante a OpenAI Chat Completions con retry.
+ */
+function aiCallOpenAI(array $payload, string $apiKey, int $maxAttempts = 2) {
     $lastError = '';
     for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
         $ch = curl_init('https://api.openai.com/v1/chat/completions');
@@ -582,7 +602,7 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
             CURLOPT_HTTPHEADER     => [
-                'Authorization: Bearer ' . $cfg['api_key'],
+                'Authorization: Bearer ' . $apiKey,
                 'Content-Type: application/json',
             ],
             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
@@ -594,36 +614,205 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
         $err  = curl_error($ch);
         curl_close($ch);
 
-        if ($resp === false) {
-            $lastError = 'Error de red: ' . $err;
-            // retry on network error
-            continue;
-        }
+        if ($resp === false) { $lastError = 'Red: ' . $err; continue; }
         $json = json_decode($resp, true);
-        if (!is_array($json)) {
-            $lastError = "Respuesta invalida (HTTP {$http}): " . substr((string)$resp, 0, 300);
-            continue;
-        }
-        if ($http >= 500 || $http === 429) {
-            $lastError = 'OpenAI HTTP ' . $http . ': ' . ($json['error']['message'] ?? '');
-            // retriable
-            continue;
-        }
+        if (!is_array($json)) { $lastError = "HTTP {$http}: " . substr((string)$resp, 0, 200); continue; }
+        if ($http >= 500 || $http === 429) { $lastError = 'OpenAI HTTP ' . $http; continue; }
         if ($http >= 400) {
-            $msg = $json['error']['message'] ?? ('HTTP ' . $http);
-            return ['ok' => false, 'error' => 'OpenAI: ' . $msg];
+            return ['ok' => false, 'error' => 'OpenAI: ' . ($json['error']['message'] ?? 'HTTP ' . $http)];
         }
         $content = $json['choices'][0]['message']['content'] ?? '';
         $tokens  = (int)($json['usage']['total_tokens'] ?? 0);
         $data = json_decode($content, true);
-        if (!is_array($data)) {
-            $lastError = 'JSON no parseable: ' . substr((string)$content, 0, 300);
-            continue;
-        }
-        $data = aiNormalizeExtraction($data);
+        if (!is_array($data)) { $lastError = 'JSON no parseable'; continue; }
         return ['ok' => true, 'data' => $data, 'tokens' => $tokens, 'raw' => $content];
     }
-    return ['ok' => false, 'error' => $lastError ?: 'Error desconocido tras reintentos.'];
+    return ['ok' => false, 'error' => $lastError ?: 'Error desconocido'];
+}
+
+/**
+ * Llama a 2 modelos en paralelo (curl_multi) y construye consenso.
+ * Solo conserva valores cuando ambos modelos coinciden; donde difieren, mantiene
+ * el del modelo principal pero baja la confianza y agrega un warning explicito.
+ */
+function aiExtractWithConsensus($dataUrl, $hintBlock, $cfg, $secondaryModel) {
+    $modelA = $cfg['model'];
+    $modelB = $secondaryModel;
+
+    $payloadA = aiBuildPayload($modelA, $dataUrl, $hintBlock);
+    $payloadB = aiBuildPayload($modelB, $dataUrl, $hintBlock);
+
+    $mh = curl_multi_init();
+    $chA = curl_init('https://api.openai.com/v1/chat/completions');
+    $chB = curl_init('https://api.openai.com/v1/chat/completions');
+    $opts = function($ch, $payload) use ($cfg) {
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $cfg['api_key'],
+                'Content-Type: application/json',
+            ],
+            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_TIMEOUT        => 50,
+            CURLOPT_CONNECTTIMEOUT => 15,
+        ]);
+    };
+    $opts($chA, $payloadA);
+    $opts($chB, $payloadB);
+
+    curl_multi_add_handle($mh, $chA);
+    curl_multi_add_handle($mh, $chB);
+
+    $active = null;
+    do {
+        $status = curl_multi_exec($mh, $active);
+        if ($active) curl_multi_select($mh, 1.0);
+    } while ($active && $status === CURLM_OK);
+
+    $parse = function($ch, $modelName) {
+        $resp = curl_multi_getcontent($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        if (!$resp) return ['ok' => false, 'model' => $modelName, 'error' => 'sin respuesta'];
+        $json = json_decode($resp, true);
+        if (!is_array($json)) return ['ok' => false, 'model' => $modelName, 'error' => "HTTP {$http}"];
+        if ($http >= 400) return ['ok' => false, 'model' => $modelName, 'error' => $json['error']['message'] ?? "HTTP {$http}"];
+        $content = $json['choices'][0]['message']['content'] ?? '';
+        $tokens  = (int)($json['usage']['total_tokens'] ?? 0);
+        $data = json_decode($content, true);
+        if (!is_array($data)) return ['ok' => false, 'model' => $modelName, 'error' => 'JSON invalido'];
+        return ['ok' => true, 'model' => $modelName, 'data' => $data, 'tokens' => $tokens, 'raw' => $content];
+    };
+
+    $resA = $parse($chA, $modelA);
+    $resB = $parse($chB, $modelB);
+
+    curl_multi_remove_handle($mh, $chA);
+    curl_multi_remove_handle($mh, $chB);
+    curl_close($chA);
+    curl_close($chB);
+    curl_multi_close($mh);
+
+    // Si el primario falla pero el secundario tiene exito, usar el secundario.
+    if (!$resA['ok'] && !$resB['ok']) {
+        return ['ok' => false, 'error' => 'Ambos modelos fallaron. A: ' . $resA['error'] . ' | B: ' . $resB['error']];
+    }
+    if (!$resA['ok']) {
+        $data = aiNormalizeExtraction($resB['data']);
+        $data['_warnings'] = array_merge($data['_warnings'] ?? [], ['Modelo principal fallo, solo se uso ' . $modelB]);
+        return ['ok' => true, 'data' => $data, 'tokens' => $resB['tokens'], 'raw' => $resB['raw']];
+    }
+    if (!$resB['ok']) {
+        $data = aiNormalizeExtraction($resA['data']);
+        $data['_warnings'] = array_merge($data['_warnings'] ?? [], ['Modelo secundario fallo, solo se uso ' . $modelA . ' (sin validacion cruzada)']);
+        return ['ok' => true, 'data' => $data, 'tokens' => $resA['tokens'], 'raw' => $resA['raw']];
+    }
+
+    // Ambos exitosos: construir consenso
+    $consensus = aiBuildConsensus($resA['data'], $resB['data'], $modelA, $modelB);
+    return [
+        'ok' => true,
+        'data' => $consensus,
+        'tokens' => ($resA['tokens'] + $resB['tokens']),
+        'raw' => json_encode([
+            'model_a' => ['model' => $modelA, 'data' => $resA['data']],
+            'model_b' => ['model' => $modelB, 'data' => $resB['data']],
+            'consensus' => $consensus,
+        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+    ];
+}
+
+/**
+ * Compara dos extracciones y devuelve datos solo cuando coinciden.
+ * Donde difieren: usa el valor del modelo A (principal) pero baja la confianza
+ * y agrega warning explicito identificando el campo divergente.
+ */
+function aiBuildConsensus(array $a, array $b, string $modelA, string $modelB) {
+    // Normalizar primero ambos (por igual)
+    $a = aiNormalizeExtraction($a);
+    $b = aiNormalizeExtraction($b);
+
+    $warnings = array_merge($a['_warnings'] ?? [], $b['_warnings'] ?? []);
+    $consensus = $a; // base
+    $disagreements = [];
+    $agreements = 0;
+    $totalChecked = 0;
+
+    // Campos string criticos: comparacion exacta tras normalizacion
+    $strictKeys = ['rnc', 'ncf', 'ncf_type', 'doc_type', 'date_doc'];
+    foreach ($strictKeys as $k) {
+        $va = (string)($a[$k] ?? '');
+        $vb = (string)($b[$k] ?? '');
+        $totalChecked++;
+        if ($va === $vb) {
+            $agreements++;
+            $consensus[$k] = $va;
+        } else {
+            $disagreements[] = "{$k}: '{$va}' vs '{$vb}'";
+            // Preferir el no-vacio si uno esta vacio
+            if ($va === '' && $vb !== '') $consensus[$k] = $vb;
+            else $consensus[$k] = $va;
+        }
+    }
+
+    // Campos numericos: tolerancia 1 RD$ o 1% (lo que sea mayor)
+    $numKeys = ['subtotal', 'itbis', 'propina_legal', 'transporte', 'isr_retention', 'itbis_retention', 'other_taxes', 'total'];
+    foreach ($numKeys as $k) {
+        $va = (float)($a[$k] ?? 0);
+        $vb = (float)($b[$k] ?? 0);
+        $totalChecked++;
+        $tolerance = max(1.0, max(abs($va), abs($vb)) * 0.01);
+        if (abs($va - $vb) <= $tolerance) {
+            $agreements++;
+            // Promediar cuando coinciden dentro de la tolerancia (corrige errores de OCR de un centavo)
+            $consensus[$k] = round(($va + $vb) / 2, 2);
+        } else {
+            $disagreements[] = "{$k}: " . number_format($va, 2) . " vs " . number_format($vb, 2);
+            // Preferir el no-cero si uno es cero (a menudo el otro lo capturo y este lo perdio)
+            if ($va == 0 && $vb != 0) $consensus[$k] = $vb;
+            elseif ($vb == 0 && $va != 0) $consensus[$k] = $va;
+            else $consensus[$k] = $va; // primary wins en desacuerdo genuino
+        }
+    }
+
+    // Campos secundarios (counterparty, concept): usar el mas largo (probablemente mas completo)
+    foreach (['counterparty_name', 'concept'] as $k) {
+        $va = (string)($a[$k] ?? '');
+        $vb = (string)($b[$k] ?? '');
+        if ($va === '' && $vb !== '') $consensus[$k] = $vb;
+        elseif ($vb === '' && $va !== '') $consensus[$k] = $va;
+        elseif (strlen($vb) > strlen($va) * 1.5) $consensus[$k] = $vb; // mucho mas largo
+        // si no, queda el de $a
+    }
+
+    // Confianza calibrada por agreement ratio
+    $agreementRatio = $totalChecked > 0 ? ($agreements / $totalChecked) : 0;
+    $avgConf = (((float)($a['confidence'] ?? 0)) + ((float)($b['confidence'] ?? 0))) / 2;
+
+    // Si 100% acuerdo: boost a 0.95+ (alta confianza calibrada)
+    // Si 80%+ acuerdo: confianza promedio sin penalizar
+    // Si <80%: penalizar proporcionalmente
+    if ($agreementRatio >= 1.0) {
+        $consensus['confidence'] = min(0.99, max($avgConf, 0.92));
+    } elseif ($agreementRatio >= 0.8) {
+        $consensus['confidence'] = $avgConf;
+    } else {
+        $consensus['confidence'] = round($avgConf * $agreementRatio, 2);
+    }
+
+    if (!empty($disagreements)) {
+        $warnings[] = 'Modelos {' . $modelA . '} y {' . $modelB . '} difieren en: ' . implode('; ', array_slice($disagreements, 0, 5));
+    } else {
+        $warnings[] = "Validacion cruzada {$modelA} + {$modelB}: 100% acuerdo.";
+    }
+
+    $consensus['_warnings'] = $warnings;
+    $consensus['_consensus'] = [
+        'models'         => [$modelA, $modelB],
+        'agreement'      => $totalChecked > 0 ? round($agreementRatio, 2) : null,
+        'disagreements'  => count($disagreements),
+    ];
+    return $consensus;
 }
 
 // --------------------------------------------------------------------------
