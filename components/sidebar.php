@@ -12,6 +12,7 @@ $sidebarGroupsAdmin = [
     'Principal' => [
         ['url' => 'admin_dashboard.php', 'label' => 'Vista 360', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'],
         ['url' => 'admin_clients.php', 'label' => 'Clientes', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6 5.87v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2m13-10a4 4 0 11-8 0 4 4 0 018 0zm6 2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>'],
+        ['url' => 'admin_approvals.php', 'label' => 'Aprobaciones', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>', 'badge' => signupPendingCount()],
         ['url' => 'admin_requests.php', 'label' => 'Solicitudes', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>'],
         ['url' => 'admin_finances.php', 'label' => 'Finanzas', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'],
     ],
@@ -26,6 +27,7 @@ $sidebarGroupsAdmin = [
         ['url' => 'admin_services.php', 'label' => 'Servicios', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h10"/></svg>'],
         ['url' => 'admin_users.php', 'label' => 'Usuarios', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'],
         ['url' => 'admin_roles.php', 'label' => 'Roles', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M12 2l9 4v6c0 5-3.5 9-9 10-5.5-1-9-5-9-10V6l9-4z"/></svg>'],
+        ['url' => 'admin_signup_settings.php', 'label' => 'Form de registro', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>'],
         ['url' => 'admin_settings.php', 'label' => 'Configuracion', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317a1.724 1.724 0 013.35 0 1.724 1.724 0 002.591 1.06 1.724 1.724 0 012.37 2.37 1.724 1.724 0 001.06 2.59 1.724 1.724 0 010 3.352 1.724 1.724 0 00-1.06 2.59 1.724 1.724 0 01-2.37 2.37 1.724 1.724 0 00-2.59 1.06 1.724 1.724 0 01-3.35 0 1.724 1.724 0 00-2.591-1.06 1.724 1.724 0 01-2.37-2.37 1.724 1.724 0 00-1.06-2.59 1.724 1.724 0 010-3.352 1.724 1.724 0 001.06-2.59 1.724 1.724 0 012.37-2.37 1.724 1.724 0 002.591-1.06z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>'],
     ],
 ];
@@ -68,6 +70,8 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
         $tourKeyMap = [
             'admin_dashboard.php'       => 'nav-dashboard',
             'admin_clients.php'         => 'nav-clients',
+            'admin_approvals.php'       => 'nav-approvals',
+            'admin_signup_settings.php' => 'nav-signup-settings',
             'admin_requests.php'        => 'nav-requests',
             'admin_finances.php'        => 'nav-finances',
             'admin_tax_calendar.php'    => 'nav-tax-calendar',
@@ -99,7 +103,10 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
                         <span class="nav-icon <?= $active ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-700' ?> transition-colors">
                             <?= $item['icon'] ?>
                         </span>
-                        <span class="font-medium"><?= htmlspecialchars($item['label']) ?></span>
+                        <span class="font-medium flex-1"><?= htmlspecialchars($item['label']) ?></span>
+                        <?php if (!empty($item['badge'])): ?>
+                        <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold"><?= (int)$item['badge'] ?></span>
+                        <?php endif; ?>
                     </a>
                 </li>
                 <?php endforeach; ?>

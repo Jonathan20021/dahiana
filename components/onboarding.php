@@ -69,6 +69,22 @@ $onboardingAutoStart = $onboardingForce || $onboardingNeedsRun;
                 }
             },
             {
+                element: '[data-tour="nav-approvals"]',
+                popover: {
+                    title: 'Aprobaciones',
+                    description: 'Cuando alguien se registra desde la pagina publica, llega aqui. Revisas sus datos, ajustas lo que haga falta y apruebas en 1 click. El sistema crea automaticamente sus solicitudes de servicios. El numero rojo te muestra cuantos esperan.',
+                    side: 'right',
+                }
+            },
+            {
+                element: '[data-tour="nav-signup-settings"]',
+                popover: {
+                    title: 'Personalizar el form de registro',
+                    description: 'Configura que campos pide el form publico, cuales son obligatorios y que servicios mostrar. Tambien puedes desactivar el registro publico completo si quieres trabajar solo con clientes invitados.',
+                    side: 'right',
+                }
+            },
+            {
                 element: '[data-tour="nav-tax-filings"]',
                 popover: {
                     title: 'Formularios fiscales',

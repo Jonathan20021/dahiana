@@ -507,3 +507,34 @@ function sendTestEmail($toEmail) {
 function wrapEmailBase($headline, $bodyHtml, $ctaUrl = null, $ctaLabel = null) {
     return renderEmailBase($headline, $bodyHtml, $ctaUrl, $ctaLabel);
 }
+
+/**
+ * Notifica a los admins cuando llega una solicitud de registro publico.
+ */
+function sendAdminNewSignupEmail($userId) {
+    global $pdo;
+    $u = $pdo->prepare("SELECT name, email, business_name, phone FROM users WHERE id = ?");
+    $u->execute([$userId]);
+    $user = $u->fetch();
+    if (!$user) return ['ok' => false];
+
+    $admins = $pdo->query("SELECT email FROM users WHERE role = 'admin'")->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($admins)) return ['ok' => false];
+
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $url   = $proto . '://' . $host . dirname($_SERVER['SCRIPT_NAME']) . '/admin_approvals.php';
+
+    $headline = 'Nueva solicitud de registro';
+    $body = '<p>Recibiste una nueva solicitud de cliente.</p>'
+          . '<p><strong>' . htmlspecialchars($user['name']) . '</strong></p>'
+          . '<p>' . htmlspecialchars($user['email']) . ($user['phone'] ? ' &middot; ' . htmlspecialchars($user['phone']) : '') . '</p>'
+          . ($user['business_name'] ? '<p>' . htmlspecialchars($user['business_name']) . '</p>' : '')
+          . '<p>Entra al panel para aprobar o rechazar.</p>';
+
+    $html = wrapEmailBase($headline, $body, $url, 'Ir a Aprobaciones');
+    foreach ($admins as $adminEmail) {
+        sendEmailRaw($adminEmail, 'Nueva solicitud: ' . $user['name'], $html, ['kind' => 'new_signup', 'related_id' => $userId]);
+    }
+    return ['ok' => true];
+}

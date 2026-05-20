@@ -132,9 +132,19 @@ $companySlogan   = trim(getSetting('company_slogan', 'Tu asesoria financiera a u
                     </button>
                 </form>
 
+                <?php if (signupIsEnabled()): ?>
+                <div class="mt-8 pt-6 border-t border-stone-100 text-center">
+                    <p class="text-sm text-slate-500">Aun no tienes cuenta?</p>
+                    <a href="signup.php" class="mt-2 inline-flex items-center gap-2 rounded-2xl bg-stone-100 hover:bg-stone-200 text-slate-900 px-5 py-2.5 text-sm font-bold transition-colors">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                        Crear cuenta
+                    </a>
+                </div>
+                <?php else: ?>
                 <p class="mt-8 text-center text-xs text-slate-400">
                     Si tienes problemas para acceder, contacta a tu administrador.
                 </p>
+                <?php endif; ?>
             </div>
         </div>
     </div>
