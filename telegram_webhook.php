@@ -1,43 +1,118 @@
 <?php
-// Telegram webhook endpoint.
-//
-// Configure your bot with:
-//   POST https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://YOUR_DOMAIN/telegram_webhook.php&secret_token=<WEBHOOK_SECRET>
-// Or use the "Conectar / Reconectar webhook" button in admin_settings.
+// Telegram webhook endpoint - hardened.
+// SIEMPRE responde 200 a Telegram. Cualquier excepcion va al log y se ignora.
+// Log file: uploads/logs/telegram.log
 
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/lib/telegram.php';
+// 1) Buffer cualquier salida accidental para que `header()` siempre funcione.
+ob_start();
 
-header('Content-Type: application/json; charset=utf-8');
+// 2) Suprimir display de errores - se loguean abajo igualmente.
+ini_set('display_errors', '0');
+error_reporting(E_ALL);
 
-$cfg = tgConfig();
-if (!$cfg['enabled']) { http_response_code(200); echo json_encode(['ok'=>false,'reason'=>'disabled']); exit; }
+// 3) Bootstrap del log
+$LOG_DIR  = __DIR__ . '/uploads/logs';
+$LOG_FILE = $LOG_DIR . '/telegram.log';
+if (!is_dir($LOG_DIR)) @mkdir($LOG_DIR, 0755, true);
 
-// Validate secret_token header sent by Telegram
-$receivedSecret = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
-if (!empty($cfg['webhook_secret']) && !hash_equals($cfg['webhook_secret'], $receivedSecret)) {
-    http_response_code(403);
-    echo json_encode(['ok'=>false,'reason'=>'invalid_secret']);
+function tgLog($msg, $context = null) {
+    global $LOG_FILE;
+    $line = '[' . date('Y-m-d H:i:s') . '] ' . $msg;
+    if ($context !== null) {
+        $line .= ' ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    @file_put_contents($LOG_FILE, $line . PHP_EOL, FILE_APPEND);
+}
+
+function tgRespond200($payload) {
+    // descarta cualquier output accidental
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    http_response_code(200);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-$payload = file_get_contents('php://input');
-$update  = json_decode($payload, true);
-if (!is_array($update)) { http_response_code(200); echo json_encode(['ok'=>true,'reason'=>'empty']); exit; }
+set_exception_handler(function ($e) {
+    tgLog('EXCEPTION', ['msg' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()]);
+    tgRespond200(['ok' => false, 'reason' => 'exception']);
+});
 
+set_error_handler(function ($severity, $message, $file, $line) {
+    if (!(error_reporting() & $severity)) return false;
+    tgLog('PHP_ERROR', ['sev' => $severity, 'msg' => $message, 'file' => $file, 'line' => $line]);
+    return true;
+});
+
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        tgLog('FATAL', $err);
+        if (!headers_sent()) {
+            while (ob_get_level() > 0) { ob_end_clean(); }
+            http_response_code(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'reason' => 'fatal']);
+        }
+    }
+});
+
+try {
+    require_once __DIR__ . '/config.php';
+    require_once __DIR__ . '/lib/telegram.php';
+
+    $cfg = tgConfig();
+    if (!$cfg['enabled']) {
+        tgLog('disabled hit');
+        tgRespond200(['ok' => false, 'reason' => 'disabled']);
+    }
+
+    // Validate secret_token header sent by Telegram
+    $receivedSecret = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
+    if (!empty($cfg['webhook_secret']) && !hash_equals($cfg['webhook_secret'], $receivedSecret)) {
+        tgLog('invalid_secret', ['received' => substr($receivedSecret, 0, 6) . '...']);
+        // Devolvemos 200 igual para que Telegram no marque error
+        tgRespond200(['ok' => false, 'reason' => 'invalid_secret']);
+    }
+
+    $payload = file_get_contents('php://input');
+    $update  = json_decode($payload, true);
+    if (!is_array($update)) {
+        tgLog('empty_update', ['body' => substr((string)$payload, 0, 200)]);
+        tgRespond200(['ok' => true, 'reason' => 'empty']);
+    }
+
+    tgLog('update', ['type' => array_keys($update), 'from' => $update['message']['from']['id'] ?? null]);
+
+    if (isset($update['message'])) {
+        tgHandleMessage($update['message']);
+    } elseif (isset($update['edited_message'])) {
+        tgHandleMessage($update['edited_message']);
+    } elseif (isset($update['callback_query'])) {
+        $cb = $update['callback_query'];
+        tgAnswerCallback($cb['id'] ?? '');
+    }
+
+    tgRespond200(['ok' => true]);
+
+} catch (Throwable $e) {
+    tgLog('THROWABLE', ['msg' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine()]);
+    tgRespond200(['ok' => false, 'reason' => 'caught']);
+}
+
+// --------------------------------------------------------------------------
+// Handlers (definidos al final para que existan despues del bootstrap)
+// --------------------------------------------------------------------------
 function tgRespondError($chatId, $msg) {
     tgSendMessage($chatId, "<b>Hubo un problema</b>\n{$msg}");
 }
 
 function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $caption = '') {
     global $pdo;
-    // For photos: pick the largest size
     if (isset($photoOrDoc[0]) && is_array($photoOrDoc[0])) {
-        // It's a list of PhotoSize
         usort($photoOrDoc, fn($a,$b) => ($b['file_size'] ?? 0) <=> ($a['file_size'] ?? 0));
         $file = $photoOrDoc[0];
     } else {
-        // It's a single Document object
         $file = $photoOrDoc;
     }
     $fileId  = $file['file_id'] ?? null;
@@ -75,7 +150,6 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     $size = @filesize($dest);
     $sha  = @hash_file('sha256', $dest);
 
-    // Dedup
     if ($sha && aiFindDuplicateUpload((int)$client['client_id'], $sha) > 0) {
         @unlink($dest);
         tgSendMessage($chatId, "Esta factura ya la habias subido antes. La ignore.");
@@ -90,10 +164,8 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
         'sha256'        => $sha,
     ], 'auto');
 
-    // Mark source as telegram
     $pdo->prepare("UPDATE invoice_uploads SET source='telegram' WHERE id=?")->execute([$uploadId]);
 
-    // Process with AI
     $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
     if ($autoProcess) {
         $res = aiProcessUpload($uploadId);
@@ -101,9 +173,9 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
             tgSendMessage($chatId, "Recibida pero la IA fallo:\n<i>" . htmlspecialchars($res['error']) . "</i>\nEl asesor la procesara manualmente.");
             return;
         }
-        $ext = $pdo->prepare("SELECT doc_type, total, itbis, ncf, counterparty_name, confidence, period FROM invoice_extractions WHERE upload_id=? ORDER BY id DESC LIMIT 1");
-        $ext->execute([$uploadId]);
-        $e = $ext->fetch();
+        $exQ = $pdo->prepare("SELECT doc_type, total, itbis, ncf, counterparty_name, confidence, period FROM invoice_extractions WHERE upload_id=? ORDER BY id DESC LIMIT 1");
+        $exQ->execute([$uploadId]);
+        $e = $exQ->fetch();
         if ($e) {
             $conf = round(((float)$e['confidence']) * 100);
             $msg = implode("\n", [
@@ -126,20 +198,17 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
 
 function tgHandleMessage(array $msg) {
     global $pdo;
-    $chatId = (int)$msg['chat']['id'];
+    $chatId = (int)($msg['chat']['id'] ?? 0);
+    if ($chatId === 0) return;
     $from   = $msg['from'] ?? [];
     $text   = trim((string)($msg['text'] ?? ''));
     $caption = trim((string)($msg['caption'] ?? ''));
     $company = trim(getSetting('company_name', 'Portal Asesoria'));
 
     tgTouchLastSeen($chatId);
-
     $client = tgClientForChat($chatId);
 
-    // Commands
     if ($text !== '') {
-        $lower = mb_strtolower($text);
-        // /start optional with payload (deep link)
         if (preg_match('/^\/start(?:@\w+)?(?:\s+(.+))?$/i', $text, $m)) {
             $payload = trim($m[1] ?? '');
             if ($payload !== '' && !$client) {
@@ -157,7 +226,7 @@ function tgHandleMessage(array $msg) {
             tgSendMessage($chatId, tgWelcomeText(htmlspecialchars($company)));
             return;
         }
-        if (preg_match('/^\/ayuda(?:@\w+)?/i', $text) || preg_match('/^\/help(?:@\w+)?/i', $text)) {
+        if (preg_match('/^\/(ayuda|help)(?:@\w+)?/i', $text)) {
             tgSendMessage($chatId, tgHelpText());
             return;
         }
@@ -179,7 +248,7 @@ function tgHandleMessage(array $msg) {
             tgSendMessage($chatId, "Listo, este chat ya no esta vinculado. Cuando quieras puedes volver con /vincular CODIGO.");
             return;
         }
-        if (preg_match('/^\/estado(?:@\w+)?/i', $text) || preg_match('/^\/status(?:@\w+)?/i', $text)) {
+        if (preg_match('/^\/(estado|status)(?:@\w+)?/i', $text)) {
             if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
             $period = date('Y-m');
             $st = $pdo->prepare("
@@ -213,7 +282,6 @@ function tgHandleMessage(array $msg) {
         }
     }
 
-    // Photo or document
     if (!$client) {
         tgSendMessage($chatId, "Aun no estas vinculado. Escribe <code>/vincular CODIGO</code> usando el codigo de tu portal.");
         return;
@@ -227,24 +295,8 @@ function tgHandleMessage(array $msg) {
         tgProcessPhoto($msg['document'], $chatId, $client, $caption);
         return;
     }
-    if (!empty($msg['media_group_id']) && !empty($msg['photo'])) {
-        tgProcessPhoto($msg['photo'], $chatId, $client, $caption);
-        return;
-    }
 
     if ($text !== '') {
         tgSendMessage($chatId, "Recibido. Si quieres procesar una factura, enviamela como foto. Escribe /ayuda para mas opciones.");
     }
 }
-
-if (isset($update['message'])) {
-    tgHandleMessage($update['message']);
-} elseif (isset($update['edited_message'])) {
-    tgHandleMessage($update['edited_message']);
-} elseif (isset($update['callback_query'])) {
-    $cb = $update['callback_query'];
-    tgAnswerCallback($cb['id'] ?? '');
-}
-
-http_response_code(200);
-echo json_encode(['ok' => true]);
