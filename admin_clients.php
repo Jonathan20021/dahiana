@@ -464,4 +464,14 @@ include 'components/layout_start.php';
     </div>
 </div>
 
+<?php if (isset($_GET['new'])): ?>
+<script>
+    // Auto-abrir modal cuando se llega con ?new=1 (desde dashboard)
+    document.addEventListener('DOMContentLoaded', function() {
+        var m = document.getElementById('addClientModal');
+        if (m) m.classList.remove('hidden');
+    });
+</script>
+<?php endif; ?>
+
 <?php include 'components/layout_end.php'; ?>

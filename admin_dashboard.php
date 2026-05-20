@@ -1,25 +1,8 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
-
-// Handle adding client
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_client') {
-    $name = $_POST['name'] ?? '';
-    $email = $_POST['email'] ?? '';
-    $phone = $_POST['phone'] ?? '';
-    $password = $_POST['password'] ?? '';
-
-    if ($name && $email && $password) {
-        $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $pdo->prepare("INSERT INTO users (name, email, phone, role, password_hash) VALUES (?, ?, ?, 'client', ?)");
-        try {
-            $stmt->execute([$name, $email, $phone, $hash]);
-            $success = "Cliente agregado exitosamente.";
-        } catch (PDOException $e) {
-            $error = "Error al agregar el cliente. Es posible que el correo ya exista.";
-        }
-    }
-}
+// El alta de clientes se hace desde admin_clients.php (form completo con perfil fiscal).
+// Aqui solo dejamos el dashboard mostrar metricas.
 
 // 360 Metrics
 $totalClients = $pdo->query("
@@ -148,11 +131,10 @@ $firstName = explode(' ', $_SESSION['name'])[0];
 $page_title    = 'Hola, ' . $firstName;
 $page_subtitle = 'Tu cartera de clientes y tramites de un vistazo.';
 $page_actions  = '<a href="admin_clients.php" class="btn-soft text-sm">Ver clientes</a>
-<button type="button" onclick="document.getElementById(\'addClientModal\').classList.remove(\'hidden\')"
-    class="btn-dark text-sm">
+<a href="admin_clients.php?new=1" class="btn-dark text-sm">
     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
     Nuevo cliente
-</button>';
+</a>';
 
 include 'components/layout_start.php';
 ?>
@@ -568,41 +550,5 @@ new Chart(growthCtx, {
     }
 });
 </script>
-
-<!-- Add client modal -->
-<div id="addClientModal" class="fixed inset-0 z-50 hidden">
-    <div class="absolute inset-0 modal-backdrop" onclick="document.getElementById('addClientModal').classList.add('hidden')"></div>
-    <div class="relative flex min-h-full items-center justify-center p-4">
-        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl">
-            <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
-                <h3 class="text-base font-bold text-slate-900">Agregar cliente</h3>
-                <button type="button" onclick="document.getElementById('addClientModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
-            </div>
-            <form action="admin_dashboard.php" method="POST" class="p-6 space-y-4">
-                <input type="hidden" name="action" value="add_client">
-                <div>
-                    <label class="field-label">Nombre completo</label>
-                    <input type="text" name="name" required class="field">
-                </div>
-                <div>
-                    <label class="field-label">Correo electronico</label>
-                    <input type="email" name="email" required class="field">
-                </div>
-                <div>
-                    <label class="field-label">Telefono (WhatsApp)</label>
-                    <input type="text" name="phone" placeholder="+18090000000" class="field">
-                </div>
-                <div>
-                    <label class="field-label">Contrasena inicial</label>
-                    <input type="text" name="password" required class="field">
-                </div>
-                <div class="pt-2 flex justify-end gap-3">
-                    <button type="button" onclick="document.getElementById('addClientModal').classList.add('hidden')" class="btn-soft text-sm">Cancelar</button>
-                    <button type="submit" class="btn-dark text-sm">Guardar cliente</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 
 <?php include 'components/layout_end.php'; ?>
