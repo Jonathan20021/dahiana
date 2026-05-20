@@ -71,6 +71,8 @@ function bootstrapAiInvoiceSchema() {
                 ncf_type VARCHAR(10) DEFAULT NULL,
                 concept VARCHAR(500) DEFAULT NULL,
                 expense_category VARCHAR(10) DEFAULT NULL,
+                income_type VARCHAR(10) DEFAULT NULL,
+                identification_type VARCHAR(2) DEFAULT NULL,
                 payment_method VARCHAR(10) DEFAULT NULL,
                 currency VARCHAR(10) DEFAULT 'DOP',
                 subtotal DECIMAL(15,2) DEFAULT 0,
@@ -138,6 +140,38 @@ function bootstrapAiInvoiceSchema() {
             try { $pdo->exec("ALTER TABLE invoice_uploads ADD COLUMN source VARCHAR(20) DEFAULT 'web'"); } catch (PDOException $e) {}
         }
 
+        // Agregar income_type + identification_type a invoice_extractions (migracion idempotente)
+        $extCols = $pdo->query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoice_extractions'")->fetchAll(PDO::FETCH_COLUMN);
+        $extCols = array_map('strtolower', $extCols);
+        if (!in_array('income_type', $extCols, true)) {
+            try { $pdo->exec("ALTER TABLE invoice_extractions ADD COLUMN income_type VARCHAR(10) DEFAULT NULL AFTER expense_category"); } catch (PDOException $e) {}
+        }
+        if (!in_array('identification_type', $extCols, true)) {
+            try { $pdo->exec("ALTER TABLE invoice_extractions ADD COLUMN identification_type VARCHAR(2) DEFAULT NULL AFTER income_type"); } catch (PDOException $e) {}
+        }
+
+        // Lo mismo en tax_filing_rows para que el export DGII tenga la info correcta
+        $rowCols = $pdo->query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='tax_filing_rows'")->fetchAll(PDO::FETCH_COLUMN);
+        $rowCols = array_map('strtolower', $rowCols);
+        if (!in_array('identification_type', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN identification_type VARCHAR(2) DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+        if (!in_array('income_type', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN income_type VARCHAR(10) DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+        if (!in_array('counterparty_name', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN counterparty_name VARCHAR(255) DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+        if (!in_array('propina_legal', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN propina_legal DECIMAL(15,2) DEFAULT 0"); } catch (PDOException $e) {}
+        }
+        if (!in_array('transporte', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN transporte DECIMAL(15,2) DEFAULT 0"); } catch (PDOException $e) {}
+        }
+        if (!in_array('payment_method', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN payment_method VARCHAR(10) DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+
         // Seed AI + Telegram settings (idempotent)
         $defaults = [
             'openai_enabled'  => '1',
@@ -182,6 +216,25 @@ function aiExpenseCategories() {
         '09' => 'Compras y Gastos del Periodo',
         '10' => 'Adquisiciones de Activos',
         '11' => 'Gastos de Seguros',
+    ];
+}
+
+function aiIncomeTypes() {
+    return [
+        '01' => 'Ingresos por Operaciones (Servicios y Bienes)',
+        '02' => 'Ingresos por Servicios Financieros',
+        '03' => 'Ingresos por Servicios de Seguros',
+        '04' => 'Ingresos por Ventas no Bienes y Servicios',
+        '05' => 'Ingresos por Servicios de Renta a Personas Fisicas',
+        '06' => 'Otros Ingresos',
+    ];
+}
+
+function aiIdentificationTypes() {
+    return [
+        '1' => 'RNC',
+        '2' => 'Cedula',
+        '3' => 'Pasaporte',
     ];
 }
 
@@ -312,10 +365,13 @@ function aiOpenAIConfig() {
 function aiSystemPrompt() {
     $cats = aiExpenseCategories();
     $pays = aiPaymentMethods();
+    $incs = aiIncomeTypes();
     $catLines = [];
     foreach ($cats as $code => $label) $catLines[] = "  - {$code}: {$label}";
     $payLines = [];
     foreach ($pays as $code => $label) $payLines[] = "  - {$code}: {$label}";
+    $incLines = [];
+    foreach ($incs as $code => $label) $incLines[] = "  - {$code}: {$label}";
 
     return implode("\n", [
         "Eres un asistente fiscal experto en la Republica Dominicana (DGII).",
@@ -361,6 +417,23 @@ function aiSystemPrompt() {
         "- Polizas / seguros -> 11",
         "- Sueldos / honorarios al personal -> 01",
         "",
+        "=== TIPOS DE INGRESO (income_type, SOLO para ventas) ===",
+        implode("\n", $incLines),
+        "Heuristicas:",
+        "- Empresa de servicios o ventas normales -> 01",
+        "- Banco/financiera -> 02",
+        "- Seguros -> 03",
+        "- Venta de activos (no del giro) -> 04",
+        "- Honorarios a persona fisica -> 05",
+        "- Cualquier otro -> 06",
+        "- Si dudas, usa 01 (caso mas comun).",
+        "",
+        "=== TIPO IDENTIFICACION (identification_type) ===",
+        "- 1 = RNC (9 digitos, persona juridica)",
+        "- 2 = Cedula (11 digitos, persona fisica)",
+        "- 3 = Pasaporte (alfanumerico, extranjeros)",
+        "Detecta automaticamente segun el formato del RNC/Cedula extraido.",
+        "",
         "=== FORMAS DE PAGO (payment_method) ===",
         implode("\n", $payLines),
         "Heuristicas:",
@@ -394,14 +467,14 @@ function aiSystemPrompt() {
         "- En notes pon cualquier observacion: 'NCF parcialmente borroso', 'Total ilegible, calculado desde subtotal+itbis', etc.",
         "",
         "=== EJEMPLOS DE EXTRACCION ===",
-        "Ejemplo 1 (factura combustible, B02):",
-        '{"doc_type":"compra","date_doc":"2026-03-15","date_payment":"","rnc":"131611176","counterparty_name":"ESTACION SHELL PUNTA CANA","ncf":"B0200001234","ncf_modified":"","ncf_type":"B02","concept":"Combustible diesel","expense_category":"02","payment_method":"03","currency":"DOP","subtotal":1500.00,"itbis":270.00,"propina_legal":0.00,"transporte":0.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":1770.00,"confidence":0.95,"notes":""}',
+        "Ejemplo 1 (compra combustible, B02, RNC 9 digitos):",
+        '{"doc_type":"compra","date_doc":"2026-03-15","date_payment":"","rnc":"131611176","counterparty_name":"ESTACION SHELL PUNTA CANA","ncf":"B0200001234","ncf_modified":"","ncf_type":"B02","concept":"Combustible diesel","expense_category":"02","income_type":"","identification_type":"1","payment_method":"03","currency":"DOP","subtotal":1500.00,"itbis":270.00,"propina_legal":0.00,"transporte":0.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":1770.00,"confidence":0.95,"notes":""}',
         "",
-        "Ejemplo 2 (restaurante con propina, B02):",
-        '{"doc_type":"compra","date_doc":"2026-03-08","date_payment":"","rnc":"130221642","counterparty_name":"PARADOR VISTA DEL MAR","ncf":"B0200271365","ncf_modified":"","ncf_type":"B02","concept":"Almuerzo equipo gerencial","expense_category":"05","payment_method":"03","currency":"DOP","subtotal":1599.15,"itbis":266.25,"propina_legal":159.92,"transporte":0.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":2025.32,"confidence":0.92,"notes":"Propina 10% incluida"}',
+        "Ejemplo 2 (compra restaurante con propina, B02):",
+        '{"doc_type":"compra","date_doc":"2026-03-08","date_payment":"","rnc":"130221642","counterparty_name":"PARADOR VISTA DEL MAR","ncf":"B0200271365","ncf_modified":"","ncf_type":"B02","concept":"Almuerzo equipo gerencial","expense_category":"05","income_type":"","identification_type":"1","payment_method":"03","currency":"DOP","subtotal":1599.15,"itbis":266.25,"propina_legal":159.92,"transporte":0.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":2025.32,"confidence":0.92,"notes":"Propina 10% incluida"}',
         "",
-        "Ejemplo 3 (venta empresa, e-CF):",
-        '{"doc_type":"venta","date_doc":"2026-02-15","date_payment":"","rnc":"131907768","counterparty_name":"GREEN STAR PARTNERS","ncf":"E310000164476","ncf_modified":"","ncf_type":"E31","concept":"Venta mercaderia con transporte","expense_category":"","payment_method":"02","currency":"DOP","subtotal":316000.00,"itbis":56880.00,"propina_legal":0.00,"transporte":18000.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":390880.00,"confidence":0.97,"notes":""}',
+        "Ejemplo 3 (venta empresa con transporte, e-CF B01, ingreso operacional):",
+        '{"doc_type":"venta","date_doc":"2026-02-15","date_payment":"","rnc":"131907768","counterparty_name":"GREEN STAR PARTNERS","ncf":"E310000164476","ncf_modified":"","ncf_type":"E31","concept":"Venta mercaderia con transporte","expense_category":"","income_type":"01","identification_type":"1","payment_method":"02","currency":"DOP","subtotal":316000.00,"itbis":56880.00,"propina_legal":0.00,"transporte":18000.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":390880.00,"confidence":0.97,"notes":""}',
         "",
         "DEVUELVE UNICAMENTE el JSON estricto. Sin explicaciones. Sin markdown. Sin texto extra.",
     ]);
@@ -422,6 +495,8 @@ function aiInvoiceJsonSchema() {
             'ncf_type'         => ['type' => 'string', 'description' => 'Tipo de NCF (B01, B02, E31, etc.)'],
             'concept'          => ['type' => 'string', 'description' => 'Descripcion corta del producto/servicio'],
             'expense_category' => ['type' => 'string', 'description' => 'Codigo 01-11 SOLO si es compra'],
+            'income_type'      => ['type' => 'string', 'description' => 'Codigo 01-06 SOLO si es venta (tipo de ingreso)'],
+            'identification_type' => ['type' => 'string', 'description' => 'Tipo identificacion contraparte: 1=RNC (9 digitos), 2=Cedula (11 digitos), 3=Pasaporte'],
             'payment_method'   => ['type' => 'string', 'description' => 'Codigo 01-07'],
             'currency'         => ['type' => 'string', 'description' => 'DOP o USD'],
             'subtotal'         => ['type' => 'number', 'description' => 'Monto sin ITBIS ni propina'],
@@ -438,6 +513,7 @@ function aiInvoiceJsonSchema() {
         'required' => [
             'doc_type','date_doc','date_payment','rnc','counterparty_name',
             'ncf','ncf_modified','ncf_type','concept','expense_category',
+            'income_type','identification_type',
             'payment_method','currency',
             'subtotal','itbis','propina_legal','transporte',
             'isr_retention','itbis_retention','other_taxes','total',
@@ -462,6 +538,30 @@ function aiNormalizeExtraction(array $data) {
         $rnc = preg_replace('/\D+/', '', $rncRaw);
     }
     $data['rnc'] = $rnc;
+
+    // Identification type: derivar del RNC si la IA no lo dio o si dio algo invalido
+    $idTypeRaw = trim((string)($data['identification_type'] ?? ''));
+    if (!in_array($idTypeRaw, ['1','2','3'], true)) {
+        if (strlen($rnc) === 9) $data['identification_type'] = '1';
+        elseif (strlen($rnc) === 11) $data['identification_type'] = '2';
+        elseif (preg_match('/[A-Z]/i', $rncRaw)) $data['identification_type'] = '3'; // pasaporte
+        else $data['identification_type'] = $idTypeRaw ?: '';
+    } else {
+        $data['identification_type'] = $idTypeRaw;
+    }
+
+    // Income type: solo aplica a ventas (01-06)
+    $incomeRaw = trim((string)($data['income_type'] ?? ''));
+    $docType = $data['doc_type'] ?? 'compra';
+    if ($docType === 'venta') {
+        if (!in_array($incomeRaw, ['01','02','03','04','05','06'], true)) {
+            $data['income_type'] = '01'; // default ingresos operacionales
+        } else {
+            $data['income_type'] = $incomeRaw;
+        }
+    } else {
+        $data['income_type'] = '';
+    }
 
     // NCF: validar y normalizar (B0X + 8d, B1X + 8d, E3X/E4X + 10d)
     $ncfRaw = (string)($data['ncf'] ?? '');
@@ -901,11 +1001,11 @@ function aiProcessUpload($uploadId) {
         INSERT INTO invoice_extractions
         (upload_id, client_id, doc_type, period, date_doc, date_payment,
          rnc, counterparty_name, ncf, ncf_modified, ncf_type,
-         concept, expense_category, payment_method, currency,
+         concept, expense_category, income_type, identification_type, payment_method, currency,
          subtotal, itbis, propina_legal, transporte,
          isr_retention, itbis_retention, other_taxes, total,
          confidence, ai_notes, raw_json)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ");
     $ins->execute([
         $uploadId,
@@ -921,6 +1021,8 @@ function aiProcessUpload($uploadId) {
         substr((string)($d['ncf_type'] ?? ''), 0, 10),
         substr((string)($d['concept'] ?? ''), 0, 500),
         substr((string)($d['expense_category'] ?? ''), 0, 10),
+        substr((string)($d['income_type'] ?? ''), 0, 10),
+        substr((string)($d['identification_type'] ?? ''), 0, 2),
         substr((string)($d['payment_method'] ?? ''), 0, 10),
         substr((string)($d['currency'] ?? 'DOP'), 0, 10),
         (float)($d['subtotal']        ?? 0),
@@ -1059,23 +1161,43 @@ function aiApproveExtraction($extractionId, $approverId = null) {
         $amount = max(0, (float)$e['total'] - (float)$e['itbis'] - (float)$e['propina_legal'] - (float)$e['transporte']);
     }
 
+    $taxType = $filingType === '606' ? ($e['expense_category'] ?: '09') : ($e['income_type'] ?: '01');
+
     if (!empty($e['filing_row_id'])) {
-        // Update existing row
-        $pdo->prepare("UPDATE tax_filing_rows SET rnc=?, ncf=?, ncf_modified=?, tax_type=?, date_doc=?, date_payment=?, amount=?, itbis=?, isr_retention=?, itbis_retention=? WHERE id=?")
+        $pdo->prepare("UPDATE tax_filing_rows SET
+            rnc=?, ncf=?, ncf_modified=?, tax_type=?,
+            identification_type=?, income_type=?, counterparty_name=?,
+            payment_method=?, propina_legal=?, transporte=?,
+            date_doc=?, date_payment=?, amount=?, itbis=?,
+            isr_retention=?, itbis_retention=?
+            WHERE id=?")
             ->execute([
-                $e['rnc'], $e['ncf'], $e['ncf_modified'],
-                $filingType === '606' ? ($e['expense_category'] ?: '09') : '01',
+                $e['rnc'], $e['ncf'], $e['ncf_modified'], $taxType,
+                $e['identification_type'] ?: null,
+                $e['income_type'] ?: null,
+                $e['counterparty_name'] ?: null,
+                $e['payment_method'] ?: null,
+                (float)$e['propina_legal'], (float)$e['transporte'],
                 $e['date_doc'], $e['date_payment'],
                 $amount, (float)$e['itbis'], (float)$e['isr_retention'], (float)$e['itbis_retention'],
                 $e['filing_row_id'],
             ]);
         $rowId = (int)$e['filing_row_id'];
     } else {
-        $pdo->prepare("INSERT INTO tax_filing_rows (filing_id, rnc, ncf, ncf_modified, tax_type, date_doc, date_payment, amount, itbis, isr_retention, itbis_retention) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        $pdo->prepare("INSERT INTO tax_filing_rows
+            (filing_id, rnc, ncf, ncf_modified, tax_type,
+             identification_type, income_type, counterparty_name,
+             payment_method, propina_legal, transporte,
+             date_doc, date_payment, amount, itbis, isr_retention, itbis_retention)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
             ->execute([
                 $filingId,
-                $e['rnc'], $e['ncf'], $e['ncf_modified'],
-                $filingType === '606' ? ($e['expense_category'] ?: '09') : '01',
+                $e['rnc'], $e['ncf'], $e['ncf_modified'], $taxType,
+                $e['identification_type'] ?: null,
+                $e['income_type'] ?: null,
+                $e['counterparty_name'] ?: null,
+                $e['payment_method'] ?: null,
+                (float)$e['propina_legal'], (float)$e['transporte'],
                 $e['date_doc'], $e['date_payment'],
                 $amount, (float)$e['itbis'], (float)$e['isr_retention'], (float)$e['itbis_retention'],
             ]);

@@ -74,7 +74,9 @@ function dgiiTxt606($filing) {
 
     foreach ($rows as $r) {
         $rnc       = dgiiDigits($r['rnc']);
-        $tipoId    = strlen($rnc) === 11 ? '2' : '1'; // 11 digitos = cedula
+        $tipoId    = ($r['identification_type'] ?? '') !== ''
+                     ? $r['identification_type']
+                     : (strlen($rnc) === 11 ? '2' : '1');
         $tipoBien  = $r['tax_type'] ?: '09';
         $ncf       = dgiiUpper($r['ncf']);
         $ncfMod    = dgiiUpper($r['ncf_modified']);
@@ -140,10 +142,12 @@ function dgiiTxt607($filing) {
 
     foreach ($rows as $r) {
         $rnc       = dgiiDigits($r['rnc']);
-        $tipoId    = $rnc === '' ? '' : (strlen($rnc) === 11 ? '2' : '1');
+        $tipoId    = ($r['identification_type'] ?? '') !== ''
+                     ? $r['identification_type']
+                     : ($rnc === '' ? '' : (strlen($rnc) === 11 ? '2' : '1'));
         $ncf       = dgiiUpper($r['ncf']);
         $ncfMod    = dgiiUpper($r['ncf_modified']);
-        $tipoIng   = '01'; // 01=Ingresos por operaciones
+        $tipoIng   = !empty($r['income_type']) ? $r['income_type'] : '01';
         $fechaDoc  = dgiiDate($r['date_doc']);
         $fechaRet  = dgiiDate($r['date_payment']);
         $monto     = dgiiNum($r['amount']);

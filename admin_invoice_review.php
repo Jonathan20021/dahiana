@@ -34,6 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'ncf_type'         => trim($_POST['ncf_type'] ?? ''),
                 'concept'          => trim($_POST['concept'] ?? ''),
                 'expense_category' => trim($_POST['expense_category'] ?? ''),
+                'income_type'      => trim($_POST['income_type'] ?? ''),
+                'identification_type' => trim($_POST['identification_type'] ?? ''),
                 'payment_method'   => trim($_POST['payment_method'] ?? ''),
                 'subtotal'         => (float)($_POST['subtotal'] ?? 0),
                 'itbis'            => (float)($_POST['itbis'] ?? 0),
@@ -49,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("
                 UPDATE invoice_extractions SET
                   doc_type=?, period=?, date_doc=?, date_payment=?, rnc=?, counterparty_name=?,
-                  ncf=?, ncf_modified=?, ncf_type=?, concept=?, expense_category=?, payment_method=?,
+                  ncf=?, ncf_modified=?, ncf_type=?, concept=?, expense_category=?, income_type=?, identification_type=?, payment_method=?,
                   subtotal=?, itbis=?, propina_legal=?, transporte=?, isr_retention=?, itbis_retention=?, total=?
                 WHERE id=?
             ");
@@ -57,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $fields['doc_type'], $fields['period'], $fields['date_doc'], $fields['date_payment'],
                 $fields['rnc'], $fields['counterparty_name'],
                 $fields['ncf'], $fields['ncf_modified'], $fields['ncf_type'], $fields['concept'],
-                $fields['expense_category'], $fields['payment_method'],
+                $fields['expense_category'], $fields['income_type'], $fields['identification_type'], $fields['payment_method'],
                 $fields['subtotal'], $fields['itbis'], $fields['propina_legal'], $fields['transporte'],
                 $fields['isr_retention'], $fields['itbis_retention'], $fields['total'],
                 $eid
@@ -239,7 +241,7 @@ $sql = "
     SELECT u.id AS upload_id, u.client_id, u.filename, u.original_name, u.mime_type, u.status, u.error_message, u.created_at,
            c.name AS client_name, c.business_name, c.rnc AS client_rnc,
            e.id AS extraction_id, e.doc_type, e.date_doc, e.date_payment, e.rnc, e.counterparty_name,
-           e.ncf, e.ncf_modified, e.ncf_type, e.concept, e.expense_category, e.payment_method,
+           e.ncf, e.ncf_modified, e.ncf_type, e.concept, e.expense_category, e.income_type, e.identification_type, e.payment_method,
            e.subtotal, e.itbis, e.propina_legal, e.transporte, e.isr_retention, e.itbis_retention, e.total,
            e.confidence, e.period AS ai_period, e.approved, e.filing_row_id
     FROM invoice_uploads u
@@ -312,6 +314,8 @@ if (!$showAllPeriods) {
 }
 
 $expenseCategories = aiExpenseCategories();
+$incomeTypes       = aiIncomeTypes();
+$idTypes           = aiIdentificationTypes();
 $paymentMethods    = aiPaymentMethods();
 
 $page_title = 'Revisar facturas IA';
@@ -722,7 +726,7 @@ include 'components/layout_start.php';
 
                         <!-- Group: Clasificacion -->
                         <div class="ir-group">
-                            <p class="ir-group-title">Clasificacion fiscal</p>
+                            <p class="ir-group-title">Clasificacion fiscal DGII</p>
                             <div class="ir-grid">
                                 <div class="ir-f ir-f-6">
                                     <label class="ir-label">Categoria gasto (606)</label>
@@ -733,6 +737,25 @@ include 'components/layout_start.php';
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
+                                <div class="ir-f ir-f-6">
+                                    <label class="ir-label">Tipo ingreso (607)</label>
+                                    <select name="income_type" class="ir-input">
+                                        <option value="">—</option>
+                                        <?php foreach ($incomeTypes as $code=>$label): ?>
+                                        <option value="<?= $code ?>" <?= $r['income_type']===$code?'selected':'' ?>><?= $code ?> · <?= htmlspecialchars($label) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="ir-f ir-f-3">
+                                    <label class="ir-label">Tipo ID</label>
+                                    <select name="identification_type" class="ir-input">
+                                        <option value="">—</option>
+                                        <?php foreach ($idTypes as $code=>$label): ?>
+                                        <option value="<?= $code ?>" <?= $r['identification_type']===$code?'selected':'' ?>><?= $code ?> · <?= htmlspecialchars($label) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="ir-f ir-f-3"></div>
                                 <div class="ir-f ir-f-6">
                                     <label class="ir-label">Forma de pago</label>
                                     <select name="payment_method" class="ir-input">
