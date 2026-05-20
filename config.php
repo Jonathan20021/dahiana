@@ -551,6 +551,10 @@ function formatPeriod($period) {
 
 // Email / Resend integration
 require_once __DIR__ . '/lib/email.php';
+// AI invoice extraction (OpenAI Vision)
+require_once __DIR__ . '/lib/ai_invoice.php';
+// Telegram bot client
+require_once __DIR__ . '/lib/telegram.php';
 
 function slugify($value) {
     $value = trim((string) $value);

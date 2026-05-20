@@ -5,7 +5,7 @@ requireAuth('admin');
 $success = $error = null;
 
 $type = $_GET['type'] ?? '606';
-if (!in_array($type, ['606', '607', '608'], true)) $type = '606';
+if (!in_array($type, ['606', '607', '608', 'IT-1'], true)) $type = '606';
 
 $period = $_GET['period'] ?? date('Y-m');
 if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) $period = date('Y-m');
@@ -18,9 +18,10 @@ $nextPeriod = date('Y-m', strtotime($period . '-01 +1 month'));
 $selectedClient = (int)($_GET['client_id'] ?? 0);
 
 $typeLabels = [
-    '606' => ['title' => 'Compras de Bienes y Servicios', 'short' => 'Compras'],
-    '607' => ['title' => 'Ventas de Bienes y Servicios', 'short' => 'Ventas'],
-    '608' => ['title' => 'NCF Anulados', 'short' => 'Anulados'],
+    '606'  => ['title' => 'Compras de Bienes y Servicios', 'short' => 'Compras'],
+    '607'  => ['title' => 'Ventas de Bienes y Servicios', 'short' => 'Ventas'],
+    'IT-1' => ['title' => 'Declaracion Mensual de ITBIS', 'short' => 'ITBIS'],
+    '608'  => ['title' => 'NCF Anulados', 'short' => 'Anulados'],
 ];
 
 // Handle export TXT (DGII format)
@@ -223,6 +224,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Refresh IT-1 totals before listing (only when viewing IT-1)
+if ($type === 'IT-1') {
+    $clients606 = $pdo->prepare("SELECT DISTINCT client_id FROM tax_filings WHERE period=? AND filing_type IN ('606','607')");
+    $clients606->execute([$period]);
+    foreach ($clients606->fetchAll(PDO::FETCH_COLUMN) as $cid) {
+        recalcIT1ForClient((int)$cid, $period);
+    }
+}
+
 // Fetch filings for this period+type
 $filings = $pdo->prepare("
     SELECT f.*, u.name AS client_name, u.rnc, u.business_name
@@ -296,6 +306,12 @@ include 'components/layout_start.php';
 <?php if ($selectedClient && $selectedFiling): ?>
 <!-- Detail view: rows of selected filing -->
 
+<?php
+// Header metrics differ for IT-1 (derived)
+$it1_paid    = (float)$selectedFiling['total_amount']; // ITBIS pagado (606)
+$it1_charged = (float)$selectedFiling['total_itbis'];  // ITBIS cobrado (607)
+$it1_balance = $it1_charged - $it1_paid;
+?>
 <div class="surface-card p-5 mb-4">
     <div class="flex flex-col lg:flex-row lg:items-center gap-4">
         <div class="flex items-center gap-4">
@@ -308,6 +324,26 @@ include 'components/layout_start.php';
                 <p class="text-xs text-slate-500">RNC <?= htmlspecialchars($selectedFiling['rnc'] ?: 'N/A') ?></p>
             </div>
         </div>
+        <?php if ($type === 'IT-1'): ?>
+        <div class="lg:ml-auto grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="rounded-xl bg-stone-50 px-3 py-2 text-center">
+                <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Documentos</p>
+                <p class="text-base font-extrabold text-slate-900"><?= (int)$selectedFiling['total_records'] ?></p>
+            </div>
+            <div class="rounded-xl bg-emerald-50 px-3 py-2 text-center">
+                <p class="text-[10px] uppercase tracking-wider text-emerald-700 font-bold">ITBIS Cobrado (607)</p>
+                <p class="text-base font-extrabold text-emerald-700">RD$ <?= number_format($it1_charged, 2) ?></p>
+            </div>
+            <div class="rounded-xl bg-blue-50 px-3 py-2 text-center">
+                <p class="text-[10px] uppercase tracking-wider text-blue-700 font-bold">ITBIS Pagado (606)</p>
+                <p class="text-base font-extrabold text-blue-700">RD$ <?= number_format($it1_paid, 2) ?></p>
+            </div>
+            <div class="rounded-xl <?= $it1_balance > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700' ?> px-3 py-2 text-center">
+                <p class="text-[10px] uppercase tracking-wider opacity-70 font-bold"><?= $it1_balance > 0 ? 'A pagar' : 'Saldo a favor' ?></p>
+                <p class="text-base font-extrabold">RD$ <?= number_format(abs($it1_balance), 2) ?></p>
+            </div>
+        </div>
+        <?php else: ?>
         <div class="lg:ml-auto grid grid-cols-3 gap-3">
             <div class="rounded-xl bg-stone-50 px-3 py-2 text-center">
                 <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Lineas</p>
@@ -322,11 +358,14 @@ include 'components/layout_start.php';
                 <p class="text-base font-extrabold text-slate-900">RD$ <?= number_format((float)$selectedFiling['total_itbis'], 0) ?></p>
             </div>
         </div>
+        <?php endif; ?>
         <div class="flex items-center gap-2 flex-wrap">
+            <?php if ($type !== 'IT-1'): ?>
             <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $selectedClient ?>&export=1" class="btn-soft text-sm">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 Exportar DGII
             </a>
+            <?php endif; ?>
             <?php if ($selectedFiling['status'] !== 'enviado'): ?>
             <form method="POST" class="inline" onsubmit="return confirm('Marcar como enviado a DGII? Tambien marcara la obligacion como completada.')">
                 <input type="hidden" name="action" value="mark_sent">
@@ -338,6 +377,79 @@ include 'components/layout_start.php';
         </div>
     </div>
 </div>
+
+<?php if ($type === 'IT-1'): ?>
+<!-- IT-1: composicion del periodo -->
+<?php
+$it1Rows = $pdo->prepare("
+    SELECT r.*, f.filing_type
+    FROM tax_filing_rows r
+    JOIN tax_filings f ON f.id = r.filing_id
+    WHERE f.client_id = ? AND f.period = ? AND f.filing_type IN ('606','607')
+    ORDER BY f.filing_type, r.date_doc DESC, r.id DESC
+");
+$it1Rows->execute([$selectedClient, $period]);
+$it1Composition = $it1Rows->fetchAll();
+?>
+<div class="surface-card overflow-hidden mb-4">
+    <div class="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
+        <div>
+            <h3 class="text-sm font-bold text-slate-900">Composicion del IT-1</h3>
+            <p class="text-[11px] text-slate-500">Las lineas se calculan automaticamente a partir del 606 y 607 aprobados desde la IA.</p>
+        </div>
+        <span class="text-xs text-slate-400"><?= count($it1Composition) ?> documento(s)</span>
+    </div>
+    <?php if (empty($it1Composition)): ?>
+    <div class="py-10 text-center text-sm text-slate-400">
+        Aun no hay facturas registradas en 606 o 607 para este periodo. Pide a tu cliente que suba sus facturas para que la IA las procese.
+    </div>
+    <?php else: ?>
+    <div class="overflow-x-auto scroll-area">
+        <table class="w-full text-xs">
+            <thead class="bg-stone-50/60 text-[10px] uppercase tracking-wider text-slate-500">
+                <tr>
+                    <th class="px-4 py-2 text-left font-bold">Formulario</th>
+                    <th class="px-4 py-2 text-left font-bold">RNC</th>
+                    <th class="px-4 py-2 text-left font-bold">NCF</th>
+                    <th class="px-4 py-2 text-left font-bold">Fecha</th>
+                    <th class="px-4 py-2 text-right font-bold">Base Imp.</th>
+                    <th class="px-4 py-2 text-right font-bold">ITBIS</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100">
+                <?php foreach ($it1Composition as $rr):
+                    $isVenta = $rr['filing_type'] === '607';
+                ?>
+                <tr class="hover:bg-stone-50/60">
+                    <td class="px-4 py-2">
+                        <span class="badge-dot <?= $isVenta ? 'badge-green' : 'badge-blue' ?>"><?= $rr['filing_type'] ?> · <?= $isVenta ? 'Venta' : 'Compra' ?></span>
+                    </td>
+                    <td class="px-4 py-2 font-mono"><?= htmlspecialchars($rr['rnc']) ?></td>
+                    <td class="px-4 py-2 font-mono"><?= htmlspecialchars($rr['ncf']) ?></td>
+                    <td class="px-4 py-2"><?= $rr['date_doc'] ? date('d/m/Y', strtotime($rr['date_doc'])) : '' ?></td>
+                    <td class="px-4 py-2 text-right font-semibold">RD$ <?= number_format((float)$rr['amount'], 2) ?></td>
+                    <td class="px-4 py-2 text-right <?= $isVenta ? 'text-emerald-700 font-bold' : 'text-blue-700 font-bold' ?>">
+                        <?= $isVenta ? '+' : '-' ?>RD$ <?= number_format((float)$rr['itbis'], 2) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+            <tfoot class="bg-stone-50/60 border-t border-stone-200">
+                <tr>
+                    <td colspan="4" class="px-4 py-2 text-right text-[11px] text-slate-500 font-bold uppercase tracking-wider">Saldo IT-1</td>
+                    <td class="px-4 py-2"></td>
+                    <td class="px-4 py-2 text-right text-base font-extrabold <?= $it1_balance > 0 ? 'text-red-700' : 'text-emerald-700' ?>">
+                        RD$ <?= number_format(abs($it1_balance), 2) ?>
+                        <span class="text-[10px] font-semibold opacity-70 block"><?= $it1_balance > 0 ? 'a pagar a DGII' : 'a favor del contribuyente' ?></span>
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <?php endif; ?>
+</div>
+
+<?php else: ?>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
     <!-- Add row form -->
@@ -458,6 +570,8 @@ include 'components/layout_start.php';
     <?php endif; ?>
 </div>
 
+<?php endif; /* end non IT-1 detail */ ?>
+
 <?php else: ?>
 <!-- List view: all filings for type+period -->
 
@@ -484,6 +598,24 @@ include 'components/layout_start.php';
                         <p class="text-[11px] text-slate-500">RNC <?= htmlspecialchars($f['rnc'] ?: 'N/A') ?></p>
                     </div>
                 </div>
+                <?php if ($type === 'IT-1'):
+                    $rowBalance = (float)$f['total_itbis'] - (float)$f['total_amount'];
+                ?>
+                <div class="grid grid-cols-3 gap-3 lg:w-[26rem] shrink-0 text-xs">
+                    <div>
+                        <p class="text-[10px] uppercase tracking-wider text-blue-600 font-bold">ITBIS Pagado</p>
+                        <p class="font-extrabold text-blue-700">RD$ <?= number_format((float)$f['total_amount'], 0) ?></p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] uppercase tracking-wider text-emerald-600 font-bold">ITBIS Cobrado</p>
+                        <p class="font-extrabold text-emerald-700">RD$ <?= number_format((float)$f['total_itbis'], 0) ?></p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] uppercase tracking-wider <?= $rowBalance > 0 ? 'text-red-600' : 'text-emerald-600' ?> font-bold"><?= $rowBalance > 0 ? 'A pagar' : 'A favor' ?></p>
+                        <p class="font-extrabold <?= $rowBalance > 0 ? 'text-red-700' : 'text-emerald-700' ?>">RD$ <?= number_format(abs($rowBalance), 0) ?></p>
+                    </div>
+                </div>
+                <?php else: ?>
                 <div class="grid grid-cols-3 gap-3 lg:w-96 shrink-0 text-xs">
                     <div>
                         <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Lineas</p>
@@ -498,6 +630,7 @@ include 'components/layout_start.php';
                         <p class="font-extrabold text-slate-900">RD$ <?= number_format((float)$f['total_itbis'], 0) ?></p>
                     </div>
                 </div>
+                <?php endif; ?>
                 <div class="flex items-center gap-2 shrink-0">
                     <?php if ($f['status'] === 'enviado'): ?>
                     <span class="badge-dot badge-green">Enviado</span>
@@ -575,6 +708,19 @@ function closeEditFiling() {
 </script>
 
 <!-- Add filing -->
+<?php if ($type === 'IT-1'): ?>
+<div class="surface-card p-5 bg-blue-50/40 border-blue-100">
+    <div class="flex items-start gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div>
+            <h4 class="text-sm font-bold text-slate-900">El IT-1 se calcula automaticamente</h4>
+            <p class="text-xs text-slate-600 leading-relaxed mt-0.5">No tienes que crearlo: cuando los clientes suben facturas y la IA las aprueba para 606/607, el IT-1 se forma solo. Si cambias o anulas algun NCF, este resumen se actualiza en tiempo real.</p>
+        </div>
+    </div>
+</div>
+<?php else: ?>
 <div class="surface-card p-5">
     <h4 class="text-sm font-bold text-slate-900 mb-3">Nuevo formulario <?= $type ?> <?= $periodLabel ?></h4>
     <form method="POST" class="flex flex-col sm:flex-row gap-2">
@@ -588,7 +734,8 @@ function closeEditFiling() {
         <button type="submit" class="btn-dark text-sm">Crear formulario</button>
     </form>
 </div>
+<?php endif; /* end create-filing block for IT-1 */ ?>
 
-<?php endif; ?>
+<?php endif; /* end list-view block */ ?>
 
 <?php include 'components/layout_end.php'; ?>

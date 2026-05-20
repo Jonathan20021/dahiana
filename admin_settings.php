@@ -14,10 +14,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         'company_slogan','company_initials','invoice_note','whatsapp_greeting',
         'whatsapp_invoice_template','whatsapp_request_template',
         'resend_api_key','email_from','email_from_name','email_reply_to',
+        'openai_api_key','openai_model','openai_max_size_mb',
+        'telegram_bot_token','telegram_bot_username','telegram_webhook_secret',
     ];
     $boolFields = [
         'email_enabled','notify_welcome','notify_invoice','notify_invoice_paid',
         'notify_request','notify_status','notify_comment',
+        'openai_enabled','openai_auto_process',
+        'telegram_enabled',
     ];
 
     $stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
@@ -28,6 +32,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $stmt->execute([$field, isset($_POST[$field]) ? '1' : '0']);
     }
     $success = "Configuracion guardada exitosamente.";
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'telegram_set_webhook') {
+    $token = trim(getSetting('telegram_bot_token', ''));
+    if ($token === '') {
+        $error = 'Configura primero el token del bot.';
+    } else {
+        $secret = trim(getSetting('telegram_webhook_secret', ''));
+        if ($secret === '') {
+            $secret = bin2hex(random_bytes(8));
+            $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_webhook_secret', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)")->execute([$secret]);
+        }
+        $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
+        $url   = $proto . '://' . $host . rtrim($scriptDir, '/') . '/telegram_webhook.php';
+        $res = tgSetWebhook($url, $secret);
+        if ($res['ok']) {
+            $info = tgGetMe();
+            if ($info['ok'] && !empty($info['result']['username'])) {
+                $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_bot_username', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)")->execute([$info['result']['username']]);
+            }
+            $success = 'Webhook conectado en ' . $url;
+        } else {
+            $error = 'No se pudo conectar el webhook: ' . $res['error'];
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'telegram_delete_webhook') {
+    $res = tgDeleteWebhook();
+    $success = $res['ok'] ? 'Webhook desconectado.' : ('Error: ' . $res['error']);
+    if (!$res['ok']) { $error = $success; $success = null; }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'test_email') {
@@ -226,6 +263,137 @@ include 'components/layout_start.php';
         </div>
     </div>
 
+    <!-- OpenAI (IA fiscal) -->
+    <div class="surface-card overflow-hidden">
+        <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-base font-bold text-slate-900">Inteligencia Artificial - Lectura de facturas</h3>
+                <p class="text-xs text-slate-500 mt-0.5">OpenAI Vision lee las fotos que suben los clientes y arma el 606/607/IT-1 automaticamente.</p>
+            </div>
+            <span class="badge-dot <?= getSetting('openai_enabled', '1') === '1' ? 'badge-green' : 'badge-slate' ?>">
+                <?= getSetting('openai_enabled', '1') === '1' ? 'Activo' : 'Desactivado' ?>
+            </span>
+        </div>
+        <div class="p-6 space-y-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label class="flex items-start gap-3 cursor-pointer rounded-2xl p-3 border border-stone-100 hover:bg-stone-50">
+                    <input type="checkbox" name="openai_enabled" value="1" <?= getSetting('openai_enabled', '1') === '1' ? 'checked' : '' ?> class="mt-1">
+                    <span>
+                        <span class="text-sm font-semibold text-slate-900">Habilitar lectura con IA</span>
+                        <span class="block text-[11px] text-slate-500">Si lo desactivas, los clientes podran subir pero no se procesara nada.</span>
+                    </span>
+                </label>
+                <label class="flex items-start gap-3 cursor-pointer rounded-2xl p-3 border border-stone-100 hover:bg-stone-50">
+                    <input type="checkbox" name="openai_auto_process" value="1" <?= getSetting('openai_auto_process', '1') === '1' ? 'checked' : '' ?> class="mt-1">
+                    <span>
+                        <span class="text-sm font-semibold text-slate-900">Procesar al subir</span>
+                        <span class="block text-[11px] text-slate-500">Cada factura se manda a OpenAI inmediatamente.</span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div class="sm:col-span-3">
+                    <label class="field-label">OpenAI API Key</label>
+                    <input type="text" name="openai_api_key" value="<?= htmlspecialchars(getSetting('openai_api_key', '')) ?>" class="field font-mono text-xs" placeholder="sk-proj-...">
+                    <p class="mt-1 text-[11px] text-slate-400">Se usa unicamente en el servidor para llamar a <code class="font-mono">api.openai.com</code>.</p>
+                </div>
+                <div>
+                    <label class="field-label">Modelo</label>
+                    <input type="text" name="openai_model" value="<?= htmlspecialchars(getSetting('openai_model', 'gpt-4o')) ?>" class="field text-sm" placeholder="gpt-4o">
+                    <p class="mt-1 text-[11px] text-slate-400">Por defecto <code>gpt-4o</code>. Puedes cambiar a <code>gpt-4.1</code> o <code>gpt-5</code> si tu cuenta lo permite.</p>
+                </div>
+                <div>
+                    <label class="field-label">Tamano max. por foto (MB)</label>
+                    <input type="number" min="1" max="20" name="openai_max_size_mb" value="<?= htmlspecialchars(getSetting('openai_max_size_mb', '12')) ?>" class="field text-sm">
+                </div>
+                <div>
+                    <label class="field-label">Categorias 606</label>
+                    <p class="text-[11px] text-slate-500 leading-snug mt-1">Se autodetectan: 01 Personal, 02 Suministros, 03 Arrendamientos, 04 Activos fijos, 05 Representacion, 06 Otras, 07 Financieros, 08 Extraordinarios, 09 Compras, 10 Adquisiciones, 11 Seguros.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Telegram bot -->
+    <?php
+    $tgCfg = tgConfig();
+    $tgInfo = null;
+    if (!empty($tgCfg['token']) && $tgCfg['enabled']) {
+        $tgInfo = tgGetWebhookInfo();
+    }
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
+    $webhookUrl = $proto . '://' . $host . rtrim($scriptDir, '/') . '/telegram_webhook.php';
+    ?>
+    <div class="surface-card overflow-hidden">
+        <div class="px-6 py-5 border-b border-stone-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-base font-bold text-slate-900">Bot de Telegram</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Tus clientes pueden enviar fotos de facturas directamente a un chat de Telegram. La IA las procesa igual que en el portal.</p>
+            </div>
+            <span class="badge-dot <?= getSetting('telegram_enabled', '0') === '1' ? 'badge-green' : 'badge-slate' ?>">
+                <?= getSetting('telegram_enabled', '0') === '1' ? 'Activo' : 'Desactivado' ?>
+            </span>
+        </div>
+        <div class="p-6 space-y-5">
+            <label class="flex items-start gap-3 cursor-pointer rounded-2xl p-3 border border-stone-100 hover:bg-stone-50">
+                <input type="checkbox" name="telegram_enabled" value="1" <?= getSetting('telegram_enabled', '0') === '1' ? 'checked' : '' ?> class="mt-1">
+                <span>
+                    <span class="text-sm font-semibold text-slate-900">Habilitar bot de Telegram</span>
+                    <span class="block text-[11px] text-slate-500">Si lo desactivas, el webhook seguira llegando pero el bot no responde.</span>
+                </span>
+            </label>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div class="sm:col-span-2">
+                    <label class="field-label">Token del bot (BotFather)</label>
+                    <input type="text" name="telegram_bot_token" value="<?= htmlspecialchars(getSetting('telegram_bot_token', '')) ?>" class="field font-mono text-xs" placeholder="123456:ABCdefGhIJklmnOpqrsTuvwxyZ">
+                    <p class="mt-1 text-[11px] text-slate-400">Crea tu bot en <a href="https://t.me/BotFather" target="_blank" class="underline">@BotFather</a>, pidele el token y pegalo aqui.</p>
+                </div>
+                <div>
+                    <label class="field-label">Username del bot</label>
+                    <div class="flex">
+                        <span class="px-3 py-2 rounded-l-xl bg-stone-100 border border-r-0 border-stone-200 text-slate-500 text-sm">@</span>
+                        <input type="text" name="telegram_bot_username" value="<?= htmlspecialchars(getSetting('telegram_bot_username', '')) ?>" class="field !rounded-l-none text-sm" placeholder="micontable_bot">
+                    </div>
+                    <p class="mt-1 text-[11px] text-slate-400">Lo usamos para el deep-link de vinculacion.</p>
+                </div>
+                <div>
+                    <label class="field-label">Webhook secret</label>
+                    <input type="text" name="telegram_webhook_secret" value="<?= htmlspecialchars(getSetting('telegram_webhook_secret', '')) ?>" class="field font-mono text-xs">
+                    <p class="mt-1 text-[11px] text-slate-400">Telegram lo envia en cada request para autenticar el webhook.</p>
+                </div>
+            </div>
+
+            <div class="rounded-2xl bg-stone-50 border border-stone-100 p-4 space-y-2 text-xs">
+                <p class="font-semibold text-slate-700">URL del webhook</p>
+                <p class="font-mono text-[11px] text-slate-500 break-all"><?= htmlspecialchars($webhookUrl) ?></p>
+                <?php if ($tgInfo && !empty($tgInfo['ok'])):
+                    $whInfo = $tgInfo['result'];
+                    $connected = !empty($whInfo['url']);
+                ?>
+                <p class="text-[11px]">
+                    Estado:
+                    <?php if ($connected): ?>
+                    <span class="font-bold text-emerald-600">Conectado</span>
+                    a <code class="font-mono text-[10px]"><?= htmlspecialchars($whInfo['url']) ?></code>
+                    <?php else: ?>
+                    <span class="font-bold text-slate-500">Sin conectar</span>
+                    <?php endif; ?>
+                </p>
+                <?php if (!empty($whInfo['pending_update_count'])): ?>
+                <p class="text-[11px] text-amber-700">Updates pendientes: <?= (int)$whInfo['pending_update_count'] ?></p>
+                <?php endif; ?>
+                <?php if (!empty($whInfo['last_error_message'])): ?>
+                <p class="text-[11px] text-red-600">Ultimo error: <?= htmlspecialchars($whInfo['last_error_message']) ?></p>
+                <?php endif; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
     <!-- Previews -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div class="surface-card overflow-hidden">
@@ -250,6 +418,28 @@ include 'components/layout_start.php';
         <button type="submit" class="btn-dark text-sm px-8">Guardar configuracion</button>
     </div>
 </form>
+
+<!-- Telegram webhook actions (out of main form) -->
+<?php $hasToken = trim(getSetting('telegram_bot_token','')) !== ''; ?>
+<div class="surface-card overflow-hidden mt-6">
+    <div class="px-6 py-4 border-b border-stone-100">
+        <h3 class="text-sm font-bold text-slate-900">Webhook de Telegram</h3>
+        <p class="text-[11px] text-slate-500 mt-0.5">Despues de guardar el token, conecta el webhook para empezar a recibir facturas por Telegram.</p>
+    </div>
+    <div class="p-5 flex flex-col sm:flex-row gap-2">
+        <form method="POST" class="inline">
+            <input type="hidden" name="action" value="telegram_set_webhook">
+            <button type="submit" class="btn-dark text-sm" <?= $hasToken ? '' : 'disabled style="opacity:.5;cursor:not-allowed"' ?>>
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 015.656 5.656l-3 3a4 4 0 01-5.656-5.656l1.1-1.1"/><path stroke-linecap="round" stroke-linejoin="round" d="M10.172 13.828a4 4 0 01-5.656-5.656l3-3a4 4 0 015.656 5.656l-1.1 1.1"/></svg>
+                Conectar / actualizar webhook
+            </button>
+        </form>
+        <form method="POST" class="inline">
+            <input type="hidden" name="action" value="telegram_delete_webhook">
+            <button type="submit" class="btn-soft text-sm">Desconectar webhook</button>
+        </form>
+    </div>
+</div>
 
 <!-- Email test + log (out of main form to avoid conflict) -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">

@@ -1,0 +1,25 @@
+# --- Uploads (datos privados de clientes) ---
+# El directorio se crea automaticamente en runtime via aiUploadsDir()
+uploads/
+
+# --- Composer ---
+/vendor/
+composer.phar
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+error_log
+
+# --- Local config ---
+.env
+.env.local
+config.local.php
