@@ -64,15 +64,36 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
 
     <!-- Navigation (grouped) -->
     <nav class="flex-1 overflow-y-auto scroll-area pt-4">
+        <?php
+        $tourKeyMap = [
+            'admin_dashboard.php'       => 'nav-dashboard',
+            'admin_clients.php'         => 'nav-clients',
+            'admin_requests.php'        => 'nav-requests',
+            'admin_finances.php'        => 'nav-finances',
+            'admin_tax_calendar.php'    => 'nav-tax-calendar',
+            'admin_tax_filings.php'     => 'nav-tax-filings',
+            'admin_invoice_review.php'  => 'nav-invoice-review',
+            'admin_telegram_debug.php'  => 'nav-telegram',
+            'admin_igualas.php'         => 'nav-igualas',
+            'admin_services.php'        => 'nav-services',
+            'admin_users.php'           => 'nav-users',
+            'admin_roles.php'           => 'nav-roles',
+            'admin_settings.php'        => 'nav-settings',
+            'client_dashboard.php'      => 'nav-dashboard',
+            'client_uploads.php'        => 'nav-uploads',
+        ];
+        ?>
         <?php foreach ($groups as $groupName => $items): ?>
         <div class="mb-5">
             <p class="px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-[0.12em]"><?= htmlspecialchars($groupName) ?></p>
             <ul class="space-y-1">
                 <?php foreach ($items as $item):
                     $active = $current_page === $item['url'];
+                    $tourKey = $tourKeyMap[$item['url']] ?? null;
                 ?>
                 <li>
                     <a href="<?= $item['url'] ?>"
+                       <?= $tourKey ? 'data-tour="' . htmlspecialchars($tourKey) . '"' : '' ?>
                        class="group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all
                               <?= $active ? 'nav-item-active' : 'text-slate-500 hover:text-slate-900 hover:bg-stone-50' ?>">
                         <span class="nav-icon <?= $active ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-700' ?> transition-colors">
@@ -85,6 +106,19 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
             </ul>
         </div>
         <?php endforeach; ?>
+
+        <!-- Boton Ayuda (relanza el tour) -->
+        <div class="mb-3">
+            <button type="button"
+                    onclick="if (window.startOnboarding) window.startOnboarding();"
+                    data-tour="help-button"
+                    class="w-full group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-slate-500 hover:text-slate-900 hover:bg-stone-50 transition-all">
+                <span class="nav-icon text-slate-400 group-hover:text-slate-700 transition-colors">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.5M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5h.01"/></svg>
+                </span>
+                <span class="font-medium">Ayuda / Tour guiado</span>
+            </button>
+        </div>
     </nav>
 
     <!-- Support card -->

@@ -121,11 +121,14 @@ function bootstrapAiInvoiceSchema() {
             )
         ");
 
-        // Add telegram_link_code to users (idempotent)
+        // Add telegram_link_code + onboarding_completed_at to users (idempotent)
         $userCols = $pdo->query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users'")->fetchAll(PDO::FETCH_COLUMN);
         $userCols = array_map('strtolower', $userCols);
         if (!in_array('telegram_link_code', $userCols, true)) {
             try { $pdo->exec("ALTER TABLE users ADD COLUMN telegram_link_code VARCHAR(20) DEFAULT NULL, ADD INDEX idx_users_telegram_link (telegram_link_code)"); } catch (PDOException $e) {}
+        }
+        if (!in_array('onboarding_completed_at', $userCols, true)) {
+            try { $pdo->exec("ALTER TABLE users ADD COLUMN onboarding_completed_at TIMESTAMP NULL DEFAULT NULL"); } catch (PDOException $e) {}
         }
 
         // Telegram source on uploads
@@ -591,7 +594,7 @@ function aiProcessUpload($uploadId) {
 
     $client = $pdo->prepare("SELECT id, name, business_name, rnc, operation_type, economic_activity FROM users WHERE id = ?");
     $client->execute([$upload['client_id']]);
-    $cli = $client->fetch();
+    $cli = $client->fetch() ?: [];
 
     $pdo->prepare("UPDATE invoice_uploads SET status='processing' WHERE id=?")->execute([$uploadId]);
 

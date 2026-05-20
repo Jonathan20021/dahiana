@@ -5,7 +5,12 @@ requireAuth('client');
 $client_id = (int)$_SESSION['user_id'];
 $client = $pdo->prepare("SELECT id, name, business_name, rnc, tax_regime, business_type, employee_count, fiscal_year_close, operation_type, telegram_link_code FROM users WHERE id = ?");
 $client->execute([$client_id]);
-$me = $client->fetch();
+$me = $client->fetch() ?: [];
+if (empty($me)) {
+    session_unset();
+    header('Location: login.php');
+    exit;
+}
 
 // Ensure Telegram link code exists
 $linkCode = $me['telegram_link_code'] ?? '';
@@ -119,7 +124,7 @@ include 'components/layout_start.php';
 ?>
 
 <!-- Hero: subir facturas con IA -->
-<div class="surface-card overflow-hidden mb-5 bg-gradient-to-br from-slate-900 to-slate-800 text-white border-0">
+<div data-tour="upload-hero" class="surface-card overflow-hidden mb-5 bg-gradient-to-br from-slate-900 to-slate-800 text-white border-0">
     <div class="px-6 py-6 lg:px-8 lg:py-7 grid grid-cols-1 lg:grid-cols-5 gap-5 items-center">
         <div class="lg:col-span-3">
             <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-blue-200">
@@ -218,7 +223,7 @@ include 'components/layout_start.php';
 <!-- Telegram link + agenda fiscal + recent invoices -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
     <!-- Telegram link card -->
-    <div class="surface-card p-5">
+    <div data-tour="telegram-card" class="surface-card p-5">
         <div class="flex items-start gap-3">
             <div class="w-10 h-10 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center shrink-0">
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
@@ -250,7 +255,7 @@ include 'components/layout_start.php';
     </div>
 
     <!-- Agenda fiscal -->
-    <div class="surface-card p-5">
+    <div data-tour="agenda" class="surface-card p-5">
         <div class="flex items-center justify-between mb-3">
             <h3 class="text-sm font-bold text-slate-900">Proximos vencimientos DGII</h3>
             <span class="badge-dot badge-slate !text-[10px]"><?= count($obligations) ?></span>

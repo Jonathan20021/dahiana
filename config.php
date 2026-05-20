@@ -555,6 +555,8 @@ require_once __DIR__ . '/lib/email.php';
 require_once __DIR__ . '/lib/ai_invoice.php';
 // Telegram bot client
 require_once __DIR__ . '/lib/telegram.php';
+// DGII exporters (TXT oficial + Excel)
+require_once __DIR__ . '/lib/dgii_export.php';
 
 function slugify($value) {
     $value = trim((string) $value);

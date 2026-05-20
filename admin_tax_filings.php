@@ -24,43 +24,23 @@ $typeLabels = [
     '608'  => ['title' => 'NCF Anulados', 'short' => 'Anulados'],
 ];
 
-// Handle export TXT (DGII format)
+// Handle DGII exports (TXT oficial, Excel, ZIP bundle)
 if (isset($_GET['export']) && $selectedClient > 0) {
-    $filing = $pdo->prepare("SELECT * FROM tax_filings WHERE client_id=? AND filing_type=? AND period=?");
-    $filing->execute([$selectedClient, $type, $period]);
-    $f = $filing->fetch();
+    $exportKind = $_GET['export']; // 'txt' | 'xls' | 'bundle'
 
-    if ($f) {
-        $rows = $pdo->prepare("SELECT * FROM tax_filing_rows WHERE filing_id=? ORDER BY id");
-        $rows->execute([$f['id']]);
-        $rowList = $rows->fetchAll();
-
-        $client = $pdo->prepare("SELECT name, rnc FROM users WHERE id=?");
-        $client->execute([$selectedClient]);
-        $c = $client->fetch();
-        $rncClient = preg_replace('/[^0-9]/', '', $c['rnc'] ?? '');
-
-        $filename = "DGII_F_{$type}_{$rncClient}_" . str_replace('-', '', $period) . ".txt";
-        header('Content-Type: text/plain; charset=utf-8');
-        header("Content-Disposition: attachment; filename=\"{$filename}\"");
-
-        // Header line (varies per type, simplified)
-        echo "{$rncClient}|" . str_replace('-', '', $period) . "|" . count($rowList) . "\n";
-        foreach ($rowList as $r) {
-            $rnc = preg_replace('/[^0-9]/', '', $r['rnc'] ?? '');
-            $ncf = $r['ncf'] ?? '';
-            if ($type === '606') {
-                // RNC | TipoIdentificacion | TipoBien | NCF | NCFModificado | FechaComprobante | FechaPago | MontoFacturado | ITBISFacturado | ITBISRetenido | ISRRetenido
-                echo "{$rnc}|1|{$r['tax_type']}|{$ncf}|{$r['ncf_modified']}|" . date('Ymd', strtotime($r['date_doc'])) . "|" . ($r['date_payment'] ? date('Ymd', strtotime($r['date_payment'])) : '') . "|{$r['amount']}|{$r['itbis']}|{$r['itbis_retention']}|{$r['isr_retention']}\n";
-            } elseif ($type === '607') {
-                // RNC | TipoIdentificacion | NCF | NCFModificado | TipoIngreso | FechaComprobante | FechaRetencion | MontoFacturado | ITBISFacturado | ITBISRetenidoTerceros | ISRRetenidoTerceros
-                echo "{$rnc}|1|{$ncf}|{$r['ncf_modified']}|01|" . date('Ymd', strtotime($r['date_doc'])) . "|" . ($r['date_payment'] ? date('Ymd', strtotime($r['date_payment'])) : '') . "|{$r['amount']}|{$r['itbis']}|{$r['itbis_retention']}|{$r['isr_retention']}\n";
-            } else {
-                // 608: NCF | FechaComprobante | TipoAnulacion
-                echo "{$ncf}|" . date('Ymd', strtotime($r['date_doc'])) . "|02\n";
-            }
-        }
+    if ($exportKind === 'bundle') {
+        dgiiStreamBundle($selectedClient, $period);
         exit;
+    }
+
+    $filing = dgiiFetchFiling($selectedClient, $type, $period);
+    if ($filing) {
+        if ($exportKind === 'xls') {
+            dgiiStreamExcel($filing);
+        } else {
+            // default txt
+            dgiiStreamTxt($filing);
+        }
     }
 }
 
@@ -202,8 +182,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $row[1] ?? '',
                         $row[2] ?? '',
                         $row[3] ?? '01',
-                        !empty($row[4]) ? date('Y-m-d', strtotime($row[4])) : date('Y-m-d'),
-                        !empty($row[5]) ? date('Y-m-d', strtotime($row[5])) : null,
+                        (function($v){ $t = !empty($v) ? strtotime($v) : false; return $t ? date('Y-m-d', $t) : date('Y-m-d'); })($row[4] ?? ''),
+                        (function($v){ $t = !empty($v) ? strtotime($v) : false; return $t ? date('Y-m-d', $t) : null; })($row[5] ?? ''),
                         (float)($row[6] ?? 0),
                         (float)($row[7] ?? 0),
                         (float)($row[8] ?? 0),
@@ -361,11 +341,19 @@ $it1_balance = $it1_charged - $it1_paid;
         <?php endif; ?>
         <div class="flex items-center gap-2 flex-wrap">
             <?php if ($type !== 'IT-1'): ?>
-            <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $selectedClient ?>&export=1" class="btn-soft text-sm">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                Exportar DGII
+            <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $selectedClient ?>&export=txt" class="btn-soft text-sm" title="Archivo TXT oficial para subir a la Oficina Virtual DGII">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                TXT DGII
             </a>
             <?php endif; ?>
+            <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $selectedClient ?>&export=xls" class="btn-soft text-sm" title="Hoja Excel con formato listo para revisar">
+                <svg class="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Excel
+            </a>
+            <a href="?type=<?= $type ?>&period=<?= $period ?>&client_id=<?= $selectedClient ?>&export=bundle" class="btn-soft text-sm" title="ZIP con 606, 607, 608, IT-1 (TXT + Excel) del periodo">
+                <svg class="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+                ZIP completo
+            </a>
             <?php if ($selectedFiling['status'] !== 'enviado'): ?>
             <form method="POST" class="inline" onsubmit="return confirm('Marcar como enviado a DGII? Tambien marcara la obligacion como completada.')">
                 <input type="hidden" name="action" value="mark_sent">

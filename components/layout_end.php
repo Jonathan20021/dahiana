@@ -25,5 +25,8 @@
         if (e.key === 'Escape') closeSidebar();
     });
 </script>
+
+<?php if (isset($_SESSION['user_id'])) include __DIR__ . '/onboarding.php'; ?>
+
 </body>
 </html>
