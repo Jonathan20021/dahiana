@@ -404,216 +404,411 @@ include 'components/layout_start.php';
         </div>
 
         <?php if (empty($rows)): ?>
-        <div class="py-12 text-center text-sm text-slate-400">No hay facturas para este filtro.</div>
+        <div class="py-16 text-center">
+            <div class="w-14 h-14 mx-auto rounded-full bg-stone-100 flex items-center justify-center mb-3">
+                <svg class="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z"/></svg>
+            </div>
+            <p class="text-sm text-slate-500 font-semibold">Sin facturas para este filtro</p>
+            <p class="text-xs text-slate-400 mt-1">Sube facturas desde el formulario de arriba o pide a tus clientes que las envien.</p>
+        </div>
         <?php else: ?>
-        <div class="divide-y divide-stone-100">
+        <div class="divide-y divide-stone-100" id="invoiceList">
             <?php foreach ($rows as $r):
                 $thumbHref = 'uploads/invoices/' . htmlspecialchars($r['filename']);
                 $isApproved = !empty($r['approved']);
+                $isImage = strpos($r['mime_type'], 'image/') === 0;
+                $confidence = (float)($r['confidence'] ?? 0);
+                $confPct = round($confidence * 100);
+                $confTone = $confidence >= 0.85 ? 'emerald' : ($confidence >= 0.6 ? 'amber' : 'red');
                 $statusBadge = match($r['status']) {
-                    'uploaded'   => '<span class="badge-dot badge-slate">En cola</span>',
-                    'processing' => '<span class="badge-dot badge-blue">Procesando</span>',
-                    'extracted'  => '<span class="badge-dot badge-amber">Por aprobar</span>',
-                    'approved'   => '<span class="badge-dot badge-green">Aprobada</span>',
-                    'rejected'   => '<span class="badge-dot badge-slate">Rechazada</span>',
-                    'error'      => '<span class="badge-dot badge-red">Error</span>',
-                    default      => '<span class="badge-dot badge-slate">' . htmlspecialchars($r['status']) . '</span>',
+                    'uploaded'   => '<span class="ir-pill ir-pill-slate">En cola</span>',
+                    'processing' => '<span class="ir-pill ir-pill-blue">Procesando</span>',
+                    'extracted'  => '<span class="ir-pill ir-pill-amber">Por aprobar</span>',
+                    'approved'   => '<span class="ir-pill ir-pill-emerald">Aprobada</span>',
+                    'rejected'   => '<span class="ir-pill ir-pill-slate">Rechazada</span>',
+                    'error'      => '<span class="ir-pill ir-pill-red">Error</span>',
+                    default      => '<span class="ir-pill ir-pill-slate">' . htmlspecialchars($r['status']) . '</span>',
                 };
-                $confColor = ($r['confidence'] ?? 0) >= 0.85 ? 'text-emerald-600' : (($r['confidence'] ?? 0) >= 0.6 ? 'text-amber-600' : 'text-red-600');
+                $rowId = 'inv-row-' . (int)$r['upload_id'];
+                $docTypeBadge = $r['doc_type']
+                    ? ($r['doc_type'] === 'venta' ? '<span class="ir-pill ir-pill-blue">607 Venta</span>' : '<span class="ir-pill ir-pill-indigo">606 Compra</span>')
+                    : '';
+                $clientLabel = $r['business_name'] ?: $r['client_name'];
             ?>
-            <div class="p-5">
-                <div class="flex flex-col lg:flex-row gap-5">
-                    <!-- Thumbnail -->
-                    <div class="lg:w-56 shrink-0">
-                        <a href="<?= $thumbHref ?>" target="_blank" class="block rounded-2xl overflow-hidden bg-stone-100 border border-stone-200 aspect-[3/4]">
-                            <?php if (strpos($r['mime_type'], 'image/') === 0): ?>
-                            <img src="<?= $thumbHref ?>" alt="" class="w-full h-full object-cover">
-                            <?php else: ?>
-                            <div class="w-full h-full flex items-center justify-center text-slate-400">
-                                <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                            </div>
-                            <?php endif; ?>
-                        </a>
-                        <p class="mt-2 text-[11px] text-slate-500 truncate"><?= htmlspecialchars($r['original_name']) ?></p>
-                        <p class="text-[10px] text-slate-400"><?= date('d/m/Y H:i', strtotime($r['created_at'])) ?></p>
-                    </div>
+            <article class="ir-row group" data-row-id="<?= $rowId ?>">
+                <!-- Compact header always visible -->
+                <div class="ir-head">
+                    <!-- thumb -->
+                    <a href="<?= $thumbHref ?>" target="_blank" class="ir-thumb shrink-0" title="Ver original">
+                        <?php if ($isImage): ?>
+                        <img src="<?= $thumbHref ?>" alt="" loading="lazy">
+                        <?php else: ?>
+                        <span class="ir-thumb-fallback">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        </span>
+                        <?php endif; ?>
+                    </a>
 
-                    <!-- Form -->
-                    <div class="flex-1 min-w-0">
-                        <div class="flex flex-wrap items-center gap-2 mb-3">
-                            <?php if (!$isApproved && $r['extraction_id']): ?>
-                            <label class="flex items-center gap-2 px-2 py-1 rounded-lg bg-stone-50 cursor-pointer">
-                                <input type="checkbox" name="ids[]" value="<?= (int)$r['extraction_id'] ?>" class="bulk-check">
-                                <span class="text-[11px] text-slate-600 font-semibold">Aprobar</span>
-                            </label>
-                            <?php endif; ?>
-                            <span class="text-sm font-bold text-slate-900"><?= htmlspecialchars($r['business_name'] ?: $r['client_name']) ?></span>
+                    <!-- main info -->
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap mb-1">
+                            <p class="font-bold text-slate-900 text-sm truncate"><?= htmlspecialchars($clientLabel) ?></p>
                             <?= $statusBadge ?>
-                            <?php if (!is_null($r['confidence'])): ?>
-                            <span class="text-[11px] font-semibold <?= $confColor ?>">Confianza IA: <?= round(((float)$r['confidence']) * 100) ?>%</span>
-                            <?php endif; ?>
-                            <?php if ($isApproved): ?>
-                            <span class="badge-dot badge-green">Insertada en formulario</span>
+                            <?= $docTypeBadge ?>
+                            <?php if ($r['extraction_id']): ?>
+                            <span class="ir-conf ir-conf-<?= $confTone ?>" title="Confianza de la IA en esta extraccion">
+                                <span class="ir-conf-bar"><span style="width: <?= $confPct ?>%"></span></span>
+                                <?= $confPct ?>%
+                            </span>
                             <?php endif; ?>
                         </div>
+                        <div class="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-slate-500">
+                            <?php if ($r['extraction_id']): ?>
+                            <span class="inline-flex items-center gap-1.5 truncate max-w-[260px]">
+                                <span class="text-slate-400">Proveedor:</span>
+                                <span class="font-semibold text-slate-700 truncate"><?= htmlspecialchars($r['counterparty_name'] ?: '—') ?></span>
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-mono">
+                                <span class="text-slate-400">NCF:</span>
+                                <span class="font-semibold text-slate-700"><?= htmlspecialchars($r['ncf'] ?: '—') ?></span>
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 font-mono">
+                                <span class="text-slate-400">RNC:</span>
+                                <span class="text-slate-700"><?= htmlspecialchars($r['rnc'] ?: '—') ?></span>
+                            </span>
+                            <span class="inline-flex items-center gap-1.5">
+                                <span class="text-slate-400"><?= $r['date_doc'] ? date('d/m/Y', strtotime($r['date_doc'])) : '—' ?></span>
+                            </span>
+                            <?php else: ?>
+                            <span class="text-amber-700"><?= htmlspecialchars($r['original_name']) ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
 
-                        <?php if (!$r['extraction_id']): ?>
-                            <div class="rounded-xl bg-stone-50 p-4 text-xs text-slate-600">
-                                <?php if ($r['status'] === 'error'): ?>
-                                Error IA: <span class="text-red-600 font-semibold"><?= htmlspecialchars($r['error_message']) ?></span>
-                                <?php else: ?>
-                                Esta factura aun no ha sido procesada por IA.
-                                <?php endif; ?>
-                                <form method="POST" class="inline ml-2">
+                    <!-- Totals (visible) -->
+                    <?php if ($r['extraction_id']): ?>
+                    <div class="ir-totals shrink-0">
+                        <div>
+                            <p class="ir-tot-label">Total</p>
+                            <p class="ir-tot-val">RD$ <?= number_format((float)$r['total'], 2) ?></p>
+                        </div>
+                        <div>
+                            <p class="ir-tot-label">ITBIS</p>
+                            <p class="ir-tot-val ir-tot-itbis">RD$ <?= number_format((float)$r['itbis'], 2) ?></p>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- Quick actions -->
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <?php if (!$isApproved && $r['extraction_id']): ?>
+                        <label class="ir-checkbox" title="Seleccionar para aprobar en lote">
+                            <input type="checkbox" name="ids[]" value="<?= (int)$r['extraction_id'] ?>" class="bulk-check">
+                            <span></span>
+                        </label>
+                        <?php endif; ?>
+
+                        <?php if ($r['extraction_id']): ?>
+                        <button type="button" class="ir-btn ir-btn-ghost" data-toggle-row="<?= $rowId ?>" title="Editar campos">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            <span class="hidden md:inline">Editar</span>
+                        </button>
+
+                        <?php if (!$isApproved): ?>
+                        <form method="POST" onsubmit="return confirm('Aprobar y agregar a 606/607?')" class="inline-flex">
+                            <input type="hidden" name="action" value="approve">
+                            <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
+                            <button type="submit" class="ir-btn ir-btn-success">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                <span class="hidden md:inline">Aprobar</span>
+                            </button>
+                        </form>
+                        <?php else: ?>
+                        <form method="POST" onsubmit="return confirm('Revertir aprobacion?')" class="inline-flex">
+                            <input type="hidden" name="action" value="reject">
+                            <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
+                            <button type="submit" class="ir-btn ir-btn-ghost" title="Revertir aprobacion">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                                <span class="hidden md:inline">Revertir</span>
+                            </button>
+                        </form>
+                        <?php endif; ?>
+                        <?php endif; ?>
+
+                        <div class="relative">
+                            <button type="button" class="ir-btn ir-btn-ghost ir-menu-trigger" data-menu="<?= $rowId ?>-menu" aria-label="Mas opciones">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>
+                            </button>
+                            <div id="<?= $rowId ?>-menu" class="ir-menu hidden">
+                                <form method="POST">
                                     <input type="hidden" name="action" value="reprocess">
                                     <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
-                                    <button type="submit" class="btn-dark !text-xs !py-1.5 !px-3 ml-2">Procesar con IA</button>
+                                    <button type="submit" class="ir-menu-item">
+                                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                        Reprocesar con IA
+                                    </button>
+                                </form>
+                                <a href="<?= $thumbHref ?>" target="_blank" class="ir-menu-item">
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                    Ver imagen original
+                                </a>
+                                <form method="POST" onsubmit="return confirm('Eliminar esta factura para siempre?')">
+                                    <input type="hidden" name="action" value="delete_upload">
+                                    <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
+                                    <button type="submit" class="ir-menu-item ir-menu-item-danger">
+                                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
+                                        Eliminar
+                                    </button>
                                 </form>
                             </div>
-                        <?php else: ?>
-                            <form method="POST" class="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                                <input type="hidden" name="action" value="update_extraction">
-                                <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
+                        </div>
+                    </div>
+                </div>
 
-                                <div class="col-span-2 sm:col-span-2">
-                                    <label class="field-label">Tipo</label>
-                                    <select name="doc_type" class="field !text-xs !py-2">
+                <!-- Error state (no extraction) -->
+                <?php if (!$r['extraction_id']): ?>
+                <div class="ir-error-row">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/></svg>
+                        <p class="text-xs">
+                            <?php if ($r['status'] === 'error'): ?>
+                            <span class="font-semibold text-red-600">Error de IA:</span>
+                            <span class="text-slate-600"><?= htmlspecialchars($r['error_message'] ?? '') ?></span>
+                            <?php else: ?>
+                            <span class="text-slate-600">Esta factura aun no ha sido procesada por la IA.</span>
+                            <?php endif; ?>
+                        </p>
+                        <form method="POST" class="ml-auto">
+                            <input type="hidden" name="action" value="reprocess">
+                            <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
+                            <button type="submit" class="ir-btn ir-btn-dark">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3"/></svg>
+                                Procesar con IA
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <?php else: ?>
+
+                <!-- Editable body (collapsible) -->
+                <div class="ir-body hidden" id="<?= $rowId ?>-body">
+                    <form method="POST" class="ir-form">
+                        <input type="hidden" name="action" value="update_extraction">
+                        <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
+
+                        <!-- Group: Identificacion -->
+                        <div class="ir-group">
+                            <p class="ir-group-title">Identificacion</p>
+                            <div class="ir-grid">
+                                <div class="ir-f ir-f-3">
+                                    <label class="ir-label">Tipo</label>
+                                    <select name="doc_type" class="ir-input">
                                         <option value="compra" <?= $r['doc_type']==='compra'?'selected':'' ?>>Compra · 606</option>
                                         <option value="venta"  <?= $r['doc_type']==='venta'?'selected':'' ?>>Venta · 607</option>
                                     </select>
                                 </div>
-                                <div class="col-span-2 sm:col-span-2">
-                                    <label class="field-label">Fecha doc</label>
-                                    <input type="date" name="date_doc" value="<?= htmlspecialchars($r['date_doc'] ?: '') ?>" class="field !text-xs !py-2">
+                                <div class="ir-f ir-f-3">
+                                    <label class="ir-label">Fecha documento</label>
+                                    <input type="date" name="date_doc" value="<?= htmlspecialchars($r['date_doc'] ?: '') ?>" class="ir-input">
                                 </div>
-                                <div class="col-span-2 sm:col-span-2">
-                                    <label class="field-label">Fecha pago</label>
-                                    <input type="date" name="date_payment" value="<?= htmlspecialchars($r['date_payment'] ?: '') ?>" class="field !text-xs !py-2">
+                                <div class="ir-f ir-f-3">
+                                    <label class="ir-label">Fecha pago</label>
+                                    <input type="date" name="date_payment" value="<?= htmlspecialchars($r['date_payment'] ?: '') ?>" class="ir-input">
                                 </div>
+                                <div class="ir-f ir-f-3">
+                                    <label class="ir-label">Concepto</label>
+                                    <input type="text" name="concept" value="<?= htmlspecialchars($r['concept'] ?? '') ?>" class="ir-input" placeholder="Combustible, comida...">
+                                </div>
+                            </div>
+                        </div>
 
-                                <div class="col-span-2 sm:col-span-3">
-                                    <label class="field-label">Contraparte</label>
-                                    <input type="text" name="counterparty_name" value="<?= htmlspecialchars($r['counterparty_name'] ?? '') ?>" class="field !text-xs !py-2">
+                        <!-- Group: Contraparte -->
+                        <div class="ir-group">
+                            <p class="ir-group-title">Contraparte y NCF</p>
+                            <div class="ir-grid">
+                                <div class="ir-f ir-f-6">
+                                    <label class="ir-label">Nombre / Razon social</label>
+                                    <input type="text" name="counterparty_name" value="<?= htmlspecialchars($r['counterparty_name'] ?? '') ?>" class="ir-input">
                                 </div>
-                                <div class="col-span-1 sm:col-span-2">
-                                    <label class="field-label">RNC / Cedula</label>
-                                    <input type="text" name="rnc" value="<?= htmlspecialchars($r['rnc'] ?? '') ?>" class="field !text-xs !py-2 font-mono">
+                                <div class="ir-f ir-f-3">
+                                    <label class="ir-label">RNC / Cedula</label>
+                                    <input type="text" name="rnc" value="<?= htmlspecialchars($r['rnc'] ?? '') ?>" class="ir-input font-mono">
                                 </div>
-                                <div class="col-span-1 sm:col-span-1">
-                                    <label class="field-label">Tipo NCF</label>
-                                    <input type="text" name="ncf_type" value="<?= htmlspecialchars($r['ncf_type'] ?? '') ?>" class="field !text-xs !py-2 font-mono">
+                                <div class="ir-f ir-f-3">
+                                    <label class="ir-label">Tipo NCF</label>
+                                    <input type="text" name="ncf_type" value="<?= htmlspecialchars($r['ncf_type'] ?? '') ?>" class="ir-input font-mono" placeholder="B01, B02, E31...">
                                 </div>
+                                <div class="ir-f ir-f-6">
+                                    <label class="ir-label">NCF</label>
+                                    <input type="text" name="ncf" value="<?= htmlspecialchars($r['ncf'] ?? '') ?>" class="ir-input font-mono">
+                                </div>
+                                <div class="ir-f ir-f-6">
+                                    <label class="ir-label">NCF modificado <span class="text-slate-400 font-normal normal-case">(notas de credito)</span></label>
+                                    <input type="text" name="ncf_modified" value="<?= htmlspecialchars($r['ncf_modified'] ?? '') ?>" class="ir-input font-mono">
+                                </div>
+                            </div>
+                        </div>
 
-                                <div class="col-span-2 sm:col-span-2">
-                                    <label class="field-label">NCF</label>
-                                    <input type="text" name="ncf" value="<?= htmlspecialchars($r['ncf'] ?? '') ?>" class="field !text-xs !py-2 font-mono">
-                                </div>
-                                <div class="col-span-2 sm:col-span-2">
-                                    <label class="field-label">NCF modificado</label>
-                                    <input type="text" name="ncf_modified" value="<?= htmlspecialchars($r['ncf_modified'] ?? '') ?>" class="field !text-xs !py-2 font-mono">
-                                </div>
-                                <div class="col-span-2 sm:col-span-2">
-                                    <label class="field-label">Concepto</label>
-                                    <input type="text" name="concept" value="<?= htmlspecialchars($r['concept'] ?? '') ?>" class="field !text-xs !py-2">
-                                </div>
-
-                                <div class="col-span-2 sm:col-span-3">
-                                    <label class="field-label">Categoria gasto (606)</label>
-                                    <select name="expense_category" class="field !text-xs !py-2">
+                        <!-- Group: Clasificacion -->
+                        <div class="ir-group">
+                            <p class="ir-group-title">Clasificacion fiscal</p>
+                            <div class="ir-grid">
+                                <div class="ir-f ir-f-6">
+                                    <label class="ir-label">Categoria gasto (606)</label>
+                                    <select name="expense_category" class="ir-input">
                                         <option value="">—</option>
                                         <?php foreach ($expenseCategories as $code=>$label): ?>
                                         <option value="<?= $code ?>" <?= $r['expense_category']===$code?'selected':'' ?>><?= $code ?> · <?= htmlspecialchars($label) ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="col-span-2 sm:col-span-3">
-                                    <label class="field-label">Forma de pago</label>
-                                    <select name="payment_method" class="field !text-xs !py-2">
+                                <div class="ir-f ir-f-6">
+                                    <label class="ir-label">Forma de pago</label>
+                                    <select name="payment_method" class="ir-input">
                                         <option value="">—</option>
                                         <?php foreach ($paymentMethods as $code=>$label): ?>
                                         <option value="<?= $code ?>" <?= $r['payment_method']===$code?'selected':'' ?>><?= $code ?> · <?= htmlspecialchars($label) ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-
-                                <div>
-                                    <label class="field-label">Subtotal</label>
-                                    <input type="number" step="0.01" name="subtotal" value="<?= htmlspecialchars($r['subtotal']) ?>" class="field !text-xs !py-2 text-right">
-                                </div>
-                                <div>
-                                    <label class="field-label">ITBIS</label>
-                                    <input type="number" step="0.01" name="itbis" value="<?= htmlspecialchars($r['itbis']) ?>" class="field !text-xs !py-2 text-right">
-                                </div>
-                                <div>
-                                    <label class="field-label">10% Ley</label>
-                                    <input type="number" step="0.01" name="propina_legal" value="<?= htmlspecialchars($r['propina_legal']) ?>" class="field !text-xs !py-2 text-right">
-                                </div>
-                                <div>
-                                    <label class="field-label">Transporte</label>
-                                    <input type="number" step="0.01" name="transporte" value="<?= htmlspecialchars($r['transporte']) ?>" class="field !text-xs !py-2 text-right">
-                                </div>
-                                <div>
-                                    <label class="field-label">Ret. ITBIS</label>
-                                    <input type="number" step="0.01" name="itbis_retention" value="<?= htmlspecialchars($r['itbis_retention']) ?>" class="field !text-xs !py-2 text-right">
-                                </div>
-                                <div>
-                                    <label class="field-label">Ret. ISR</label>
-                                    <input type="number" step="0.01" name="isr_retention" value="<?= htmlspecialchars($r['isr_retention']) ?>" class="field !text-xs !py-2 text-right">
-                                </div>
-                                <div class="col-span-2 sm:col-span-6">
-                                    <label class="field-label">Total final</label>
-                                    <input type="number" step="0.01" name="total" value="<?= htmlspecialchars($r['total']) ?>" class="field !text-sm font-bold !py-2 text-right">
-                                </div>
-
-                                <div class="col-span-2 sm:col-span-6 flex flex-wrap gap-2 pt-2">
-                                    <button type="submit" class="btn-soft !text-xs">Guardar correcciones</button>
-                                </div>
-                            </form>
-
-                            <div class="mt-3 flex flex-wrap gap-2">
-                                <?php if (!$isApproved): ?>
-                                <form method="POST" onsubmit="return confirm('Aprobar y agregar al formulario 606/607?')">
-                                    <input type="hidden" name="action" value="approve">
-                                    <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
-                                    <button type="submit" class="btn-dark !text-xs bg-emerald-600 hover:bg-emerald-700">
-                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                        Aprobar y agregar
-                                    </button>
-                                </form>
-                                <?php else: ?>
-                                <form method="POST" onsubmit="return confirm('Revertir esta aprobacion?')">
-                                    <input type="hidden" name="action" value="reject">
-                                    <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
-                                    <button type="submit" class="btn-soft !text-xs">
-                                        Revertir aprobacion
-                                    </button>
-                                </form>
-                                <?php endif; ?>
-                                <form method="POST">
-                                    <input type="hidden" name="action" value="reprocess">
-                                    <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
-                                    <button type="submit" class="btn-soft !text-xs">
-                                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                                        Reprocesar IA
-                                    </button>
-                                </form>
-                                <form method="POST" onsubmit="return confirm('Eliminar completamente esta factura?')" class="ml-auto">
-                                    <input type="hidden" name="action" value="delete_upload">
-                                    <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
-                                    <button type="submit" class="text-red-500 hover:text-red-700 text-xs font-semibold">Eliminar</button>
-                                </form>
                             </div>
-                        <?php endif; ?>
-                    </div>
+                        </div>
+
+                        <!-- Group: Montos -->
+                        <div class="ir-group">
+                            <p class="ir-group-title">Montos</p>
+                            <div class="ir-grid">
+                                <div class="ir-f ir-f-2">
+                                    <label class="ir-label">Subtotal</label>
+                                    <input type="number" step="0.01" name="subtotal" value="<?= htmlspecialchars($r['subtotal']) ?>" class="ir-input text-right font-mono" data-sumtotal>
+                                </div>
+                                <div class="ir-f ir-f-2">
+                                    <label class="ir-label">ITBIS</label>
+                                    <input type="number" step="0.01" name="itbis" value="<?= htmlspecialchars($r['itbis']) ?>" class="ir-input text-right font-mono" data-sumtotal>
+                                </div>
+                                <div class="ir-f ir-f-2">
+                                    <label class="ir-label">10% Ley</label>
+                                    <input type="number" step="0.01" name="propina_legal" value="<?= htmlspecialchars($r['propina_legal']) ?>" class="ir-input text-right font-mono" data-sumtotal>
+                                </div>
+                                <div class="ir-f ir-f-2">
+                                    <label class="ir-label">Transporte</label>
+                                    <input type="number" step="0.01" name="transporte" value="<?= htmlspecialchars($r['transporte']) ?>" class="ir-input text-right font-mono" data-sumtotal>
+                                </div>
+                                <div class="ir-f ir-f-2">
+                                    <label class="ir-label">Ret. ITBIS</label>
+                                    <input type="number" step="0.01" name="itbis_retention" value="<?= htmlspecialchars($r['itbis_retention']) ?>" class="ir-input text-right font-mono">
+                                </div>
+                                <div class="ir-f ir-f-2">
+                                    <label class="ir-label">Ret. ISR</label>
+                                    <input type="number" step="0.01" name="isr_retention" value="<?= htmlspecialchars($r['isr_retention']) ?>" class="ir-input text-right font-mono">
+                                </div>
+                                <div class="ir-f ir-f-12">
+                                    <label class="ir-label">Total final</label>
+                                    <input type="number" step="0.01" name="total" value="<?= htmlspecialchars($r['total']) ?>" class="ir-input ir-input-total text-right font-mono">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ir-form-footer">
+                            <button type="button" class="ir-btn ir-btn-ghost" data-toggle-row="<?= $rowId ?>">Cerrar</button>
+                            <button type="submit" class="ir-btn ir-btn-dark">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                                Guardar correcciones
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            </div>
+                <?php endif; ?>
+            </article>
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
     </div>
 </form>
 
+<style>
+    /* === Invoice Review compact list === */
+    .ir-row { transition: background .15s ease; }
+    .ir-row:hover { background: #FAFAFA; }
+    .ir-head { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
+    .ir-thumb { display: block; width: 56px; height: 56px; border-radius: 14px; overflow: hidden; background: #F4F4F5; border: 1px solid #E5E7EB; transition: transform .2s ease; }
+    .ir-thumb:hover { transform: scale(1.06); }
+    .ir-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .ir-thumb-fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #94A3B8; }
+    .ir-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; letter-spacing: 0.02em; }
+    .ir-pill::before { content: ''; width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+    .ir-pill-emerald { color: #15803D; background: #DCFCE7; }
+    .ir-pill-amber   { color: #B45309; background: #FEF3C7; }
+    .ir-pill-red     { color: #DC2626; background: #FEE2E2; }
+    .ir-pill-blue    { color: #1D4ED8; background: #DBEAFE; }
+    .ir-pill-indigo  { color: #4F46E5; background: #E0E7FF; }
+    .ir-pill-slate   { color: #475569; background: #F1F5F9; }
+    .ir-conf { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: #F4F4F5; }
+    .ir-conf-bar { width: 38px; height: 4px; border-radius: 999px; background: #E5E7EB; overflow: hidden; display: inline-block; }
+    .ir-conf-bar span { display: block; height: 100%; border-radius: 999px; }
+    .ir-conf-emerald { color: #15803D; background: #ECFDF5; }
+    .ir-conf-emerald .ir-conf-bar span { background: #10B981; }
+    .ir-conf-amber   { color: #B45309; background: #FFFBEB; }
+    .ir-conf-amber   .ir-conf-bar span { background: #F59E0B; }
+    .ir-conf-red     { color: #DC2626; background: #FEF2F2; }
+    .ir-conf-red     .ir-conf-bar span { background: #EF4444; }
+    .ir-totals { display: flex; gap: 18px; align-items: center; }
+    .ir-tot-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94A3B8; }
+    .ir-tot-val   { font-size: 14px; font-weight: 800; color: #0F172A; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .ir-tot-itbis { color: #475569; font-size: 12px; font-weight: 600; }
+    .ir-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; font-size: 12px; font-weight: 700; transition: all .15s ease; white-space: nowrap; }
+    .ir-btn-ghost { background: #F4F4F5; color: #475569; }
+    .ir-btn-ghost:hover { background: #E5E7EB; color: #0F172A; }
+    .ir-btn-dark { background: #0F172A; color: #fff; }
+    .ir-btn-dark:hover { background: #1E293B; }
+    .ir-btn-success { background: #10B981; color: #fff; }
+    .ir-btn-success:hover { background: #059669; }
+    .ir-checkbox { display: inline-flex; align-items: center; cursor: pointer; padding: 2px; }
+    .ir-checkbox input { position: absolute; opacity: 0; pointer-events: none; }
+    .ir-checkbox span { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid #CBD5E1; display: inline-flex; align-items: center; justify-content: center; transition: all .15s ease; }
+    .ir-checkbox input:checked + span { background: #0F172A; border-color: #0F172A; }
+    .ir-checkbox input:checked + span::after { content: ''; width: 6px; height: 9px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg) translateY(-1px); }
+    .ir-menu { position: absolute; top: calc(100% + 4px); right: 0; min-width: 200px; background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; box-shadow: 0 10px 30px rgba(15,23,42,0.12); z-index: 30; padding: 6px; }
+    .ir-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; color: #475569; text-align: left; transition: all .12s ease; }
+    .ir-menu-item:hover { background: #F4F4F5; color: #0F172A; }
+    .ir-menu-item-danger { color: #DC2626; }
+    .ir-menu-item-danger:hover { background: #FEF2F2; color: #B91C1C; }
+
+    .ir-body { padding: 0 20px 18px 20px; background: linear-gradient(to bottom, #FAFAFA, #fff); }
+    .ir-form { display: grid; gap: 14px; }
+    .ir-group { background: #fff; border: 1px solid #EEF0F2; border-radius: 16px; padding: 14px 16px; }
+    .ir-group-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #64748B; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #F1F5F9; }
+    .ir-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px; }
+    .ir-f-2 { grid-column: span 6; }
+    .ir-f-3 { grid-column: span 6; }
+    .ir-f-6 { grid-column: span 12; }
+    .ir-f-12 { grid-column: span 12; }
+    @media (min-width: 640px) {
+        .ir-f-2 { grid-column: span 4; }
+        .ir-f-3 { grid-column: span 6; }
+        .ir-f-6 { grid-column: span 6; }
+    }
+    @media (min-width: 1024px) {
+        .ir-f-2 { grid-column: span 2; }
+        .ir-f-3 { grid-column: span 3; }
+        .ir-f-6 { grid-column: span 6; }
+    }
+    .ir-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748B; margin-bottom: 5px; display: block; }
+    .ir-input { width: 100%; border: 1.5px solid #E5E7EB; border-radius: 10px; padding: 9px 11px; font-size: 13px; color: #0F172A; background: #fff; transition: all .12s ease; font-variant-numeric: tabular-nums; }
+    .ir-input:focus { outline: none; border-color: #0F172A; box-shadow: 0 0 0 3px rgba(15,23,42,0.05); }
+    .ir-input-total { font-size: 16px; font-weight: 800; background: #F4F4F5; border-color: #CBD5E1; }
+    .ir-form-footer { display: flex; gap: 8px; justify-content: flex-end; padding-top: 4px; }
+    .ir-error-row { padding: 0 20px 16px 20px; }
+    .ir-error-row > div { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 14px; padding: 12px 14px; }
+
+    @media (max-width: 768px) {
+        .ir-head { flex-wrap: wrap; }
+        .ir-totals { width: 100%; justify-content: flex-end; }
+    }
+</style>
+
 <script>
+// Bulk selection
 (function() {
     const form = document.getElementById('bulkForm');
     const btn = document.getElementById('bulkBtn');
@@ -632,6 +827,62 @@ include 'components/layout_start.php';
     }
     form.addEventListener('change', refresh);
     refresh();
+})();
+
+// Row expansion + dropdown menus
+(function() {
+    // Toggle expandible body
+    document.querySelectorAll('[data-toggle-row]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = btn.dataset.toggleRow;
+            const body = document.getElementById(id + '-body');
+            if (!body) return;
+            const isOpen = !body.classList.contains('hidden');
+            // Close other open bodies
+            document.querySelectorAll('.ir-body').forEach(b => {
+                if (b.id !== id + '-body') b.classList.add('hidden');
+            });
+            body.classList.toggle('hidden', isOpen);
+            if (!isOpen) {
+                body.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+    });
+
+    // Dropdown menus
+    document.querySelectorAll('.ir-menu-trigger').forEach(trigger => {
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const menuId = trigger.dataset.menu;
+            const menu = document.getElementById(menuId);
+            const wasOpen = !menu.classList.contains('hidden');
+            document.querySelectorAll('.ir-menu').forEach(m => m.classList.add('hidden'));
+            if (!wasOpen) menu.classList.remove('hidden');
+        });
+    });
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.ir-menu').forEach(m => m.classList.add('hidden'));
+    });
+    document.querySelectorAll('.ir-menu').forEach(m => {
+        m.addEventListener('click', (e) => e.stopPropagation());
+    });
+})();
+
+// Auto-recalc Total when components change
+(function() {
+    document.querySelectorAll('.ir-form').forEach(form => {
+        const inputs = form.querySelectorAll('[data-sumtotal]');
+        const totalInput = form.querySelector('input[name="total"]');
+        if (!totalInput) return;
+        inputs.forEach(inp => {
+            inp.addEventListener('input', () => {
+                let sum = 0;
+                inputs.forEach(i => sum += parseFloat(i.value) || 0);
+                totalInput.value = sum.toFixed(2);
+            });
+        });
+    });
 })();
 
 // Admin upload zone
