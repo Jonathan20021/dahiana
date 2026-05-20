@@ -69,33 +69,44 @@ if (!empty($wh['ok']) && !empty($wh['result']['url'])) {
 $lastOffset = (int)getSetting('telegram_last_offset', 0);
 pollLog('Polling start', ['offset' => $lastOffset]);
 
-// getUpdates con timeout corto (somos cron)
+// Long polling continuo durante toda la ventana del cron.
+// Telegram nos responde en cuanto llega un update (latencia ~1s en vez de 60s).
+@set_time_limit(0);
+ignore_user_abort(true);
+
 $startTime = microtime(true);
 $processedCount = 0;
-$maxRuntimeSeconds = 50; // dejar buffer para que cron de 1 min no se solape
+$maxRuntimeSeconds = $isCli ? 55 : 30; // CLI: hasta 55s. Web manual: 30s para no colgar el browser.
+$longPollTimeout   = 25; // Telegram espera hasta 25s por updates (long polling)
 
 while (true) {
-    if ((microtime(true) - $startTime) >= $maxRuntimeSeconds) {
+    $elapsed = microtime(true) - $startTime;
+    $remaining = $maxRuntimeSeconds - $elapsed;
+    if ($remaining < 5) {
         pollLog('Time budget reached, stopping');
         break;
     }
 
+    // Ajustar timeout para no exceder el budget
+    $effectiveTimeout = min($longPollTimeout, max(1, (int)$remaining - 2));
+
     $res = tgApi('getUpdates', [
         'offset'  => $lastOffset + 1,
         'limit'   => 50,
-        'timeout' => 10, // long polling: telegram espera hasta 10s
+        'timeout' => $effectiveTimeout,
         'allowed_updates' => json_encode(['message','edited_message','callback_query']),
     ]);
 
     if (!$res['ok']) {
         pollLog('getUpdates failed', ['error' => $res['error']]);
-        break;
+        sleep(2);
+        continue;
     }
 
     $updates = $res['result'] ?? [];
     if (empty($updates)) {
-        // No hay updates pendientes ahora
-        break;
+        // Sin updates en esta ventana de long polling -> seguimos escuchando
+        continue;
     }
 
     foreach ($updates as $update) {
@@ -114,7 +125,7 @@ while (true) {
         }
     }
 
-    // Persistir offset
+    // Persistir offset despues de cada batch
     global $pdo;
     $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_last_offset', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
         ->execute([(string)$lastOffset]);

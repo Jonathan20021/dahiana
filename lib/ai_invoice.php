@@ -492,7 +492,7 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
                 'Content-Type: application/json',
             ],
             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
-            CURLOPT_TIMEOUT        => 150,
+            CURLOPT_TIMEOUT        => 45,
             CURLOPT_CONNECTTIMEOUT => 20,
         ]);
         $resp = curl_exec($ch);

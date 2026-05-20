@@ -68,11 +68,17 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
 
     $pdo->prepare("UPDATE invoice_uploads SET source='telegram' WHERE id=?")->execute([$uploadId]);
 
+    // Feedback instantaneo antes de llamar a la IA (puede tardar 5-10s)
+    $ack = tgSendMessage($chatId, "Recibida. Procesando con IA...");
+    $ackMessageId = (int)($ack['result']['message_id'] ?? 0);
+
     $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
     if ($autoProcess) {
         $res = aiProcessUpload($uploadId);
         if (!$res['ok']) {
-            tgSendMessage($chatId, "Recibida pero la IA fallo:\n<i>" . htmlspecialchars($res['error']) . "</i>\nEl asesor la procesara manualmente.");
+            $errMsg = "La IA fallo:\n<i>" . htmlspecialchars($res['error']) . "</i>\nEl asesor la procesara manualmente.";
+            if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $errMsg);
+            else tgSendMessage($chatId, $errMsg);
             return;
         }
         $exQ = $pdo->prepare("SELECT doc_type, total, itbis, ncf, counterparty_name, confidence, period FROM invoice_extractions WHERE upload_id=? ORDER BY id DESC LIMIT 1");
@@ -91,11 +97,14 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
                 "",
                 "Tu asesor la validara para incluirla en el formulario.",
             ]);
-            tgSendMessage($chatId, $msg);
+            if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
+            else tgSendMessage($chatId, $msg);
             return;
         }
     }
-    tgSendMessage($chatId, "Factura recibida. Tu asesor la procesara con IA en breve.");
+    $fallback = "Factura recibida. Tu asesor la procesara con IA en breve.";
+    if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $fallback);
+    else tgSendMessage($chatId, $fallback);
 }
 
 function tgHandleMessage(array $msg) {
