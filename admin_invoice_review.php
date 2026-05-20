@@ -5,11 +5,12 @@ requireAuth('admin');
 $success = $error = null;
 
 $period = $_GET['period'] ?? date('Y-m');
-if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) $period = date('Y-m');
+$showAllPeriods = ($period === 'all');
+if (!$showAllPeriods && !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) $period = date('Y-m');
 $months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-$periodLabel = $months[(int)substr($period, 5, 2) - 1] . ' ' . substr($period, 0, 4);
-$prevPeriod = date('Y-m', strtotime($period . '-01 -1 month'));
-$nextPeriod = date('Y-m', strtotime($period . '-01 +1 month'));
+$periodLabel = $showAllPeriods ? 'Todos los periodos' : ($months[(int)substr($period, 5, 2) - 1] . ' ' . substr($period, 0, 4));
+$prevPeriod = $showAllPeriods ? date('Y-m') : date('Y-m', strtotime($period . '-01 -1 month'));
+$nextPeriod = $showAllPeriods ? date('Y-m') : date('Y-m', strtotime($period . '-01 +1 month'));
 
 $filterClient = (int)($_GET['client_id'] ?? 0);
 $filterStatus = $_GET['status'] ?? 'pending';
@@ -223,13 +224,16 @@ if ($filterStatus === 'pending') {
 if ($filterClient > 0) { $where .= " AND u.client_id = ?"; $params[] = $filterClient; }
 if (in_array($filterType, ['compra','venta'], true)) { $where .= " AND e.doc_type = ?"; $params[] = $filterType; }
 
-// Period filter: prefer extraction period; fall back to upload period or created_at
-$where .= " AND (
-    e.period = ?
-    OR (e.period IS NULL AND u.period = ?)
-    OR (e.period IS NULL AND u.period IS NULL AND DATE_FORMAT(u.created_at, '%Y-%m') = ?)
-)";
-$params[] = $period; $params[] = $period; $params[] = $period;
+// Period filter: prefer extraction period; fall back to upload period or created_at.
+// Si se elige "all", no se filtra por periodo (muestra todas las facturas).
+if (!$showAllPeriods) {
+    $where .= " AND (
+        e.period = ?
+        OR (e.period IS NULL AND u.period = ?)
+        OR (e.period IS NULL AND u.period IS NULL AND DATE_FORMAT(u.created_at, '%Y-%m') = ?)
+    )";
+    $params[] = $period; $params[] = $period; $params[] = $period;
+}
 
 $sql = "
     SELECT u.id AS upload_id, u.client_id, u.filename, u.original_name, u.mime_type, u.status, u.error_message, u.created_at,
@@ -259,17 +263,53 @@ $clients = $pdo->query("
 ")->fetchAll();
 
 // Aggregated totals for header chip
-$agg = $pdo->prepare("
-    SELECT
-      COUNT(*) AS n,
-      SUM(CASE WHEN u.status='extracted' THEN 1 ELSE 0 END) AS pending,
-      SUM(CASE WHEN u.status='approved'  THEN 1 ELSE 0 END) AS approved
-    FROM invoice_uploads u
-    LEFT JOIN invoice_extractions e ON e.upload_id = u.id
-    WHERE (e.period = ? OR (e.period IS NULL AND DATE_FORMAT(u.created_at,'%Y-%m') = ?))
-");
-$agg->execute([$period, $period]);
-$summary = $agg->fetch() ?: ['n'=>0,'pending'=>0,'approved'=>0];
+if ($showAllPeriods) {
+    $agg = $pdo->query("
+        SELECT
+          COUNT(*) AS n,
+          SUM(CASE WHEN u.status='extracted' THEN 1 ELSE 0 END) AS pending,
+          SUM(CASE WHEN u.status='approved'  THEN 1 ELSE 0 END) AS approved
+        FROM invoice_uploads u
+        LEFT JOIN invoice_extractions e ON e.upload_id = u.id
+    ");
+    $summary = $agg->fetch() ?: ['n'=>0,'pending'=>0,'approved'=>0];
+} else {
+    $agg = $pdo->prepare("
+        SELECT
+          COUNT(*) AS n,
+          SUM(CASE WHEN u.status='extracted' THEN 1 ELSE 0 END) AS pending,
+          SUM(CASE WHEN u.status='approved'  THEN 1 ELSE 0 END) AS approved
+        FROM invoice_uploads u
+        LEFT JOIN invoice_extractions e ON e.upload_id = u.id
+        WHERE (e.period = ? OR (e.period IS NULL AND DATE_FORMAT(u.created_at,'%Y-%m') = ?))
+    ");
+    $agg->execute([$period, $period]);
+    $summary = $agg->fetch() ?: ['n'=>0,'pending'=>0,'approved'=>0];
+}
+
+// Pendientes en OTROS periodos (para banner de alerta)
+$otherPeriodsAlert = null;
+if (!$showAllPeriods) {
+    $otherPending = $pdo->prepare("
+        SELECT e.period, COUNT(*) AS n
+        FROM invoice_uploads u
+        JOIN invoice_extractions e ON e.upload_id = u.id
+        WHERE u.status = 'extracted'
+          AND e.period IS NOT NULL
+          AND e.period != ?
+        GROUP BY e.period
+        ORDER BY e.period DESC
+    ");
+    $otherPending->execute([$period]);
+    $otherRows = $otherPending->fetchAll();
+    if (!empty($otherRows)) {
+        $totalOther = array_sum(array_column($otherRows, 'n'));
+        $otherPeriodsAlert = [
+            'total'  => (int)$totalOther,
+            'periods'=> $otherRows,
+        ];
+    }
+}
 
 $expenseCategories = aiExpenseCategories();
 $paymentMethods    = aiPaymentMethods();
@@ -337,16 +377,47 @@ include 'components/layout_start.php';
     </form>
 </div>
 
+<?php if ($otherPeriodsAlert): ?>
+<div class="mb-4 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-3">
+    <svg class="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9zm-9 3.75h.008v.008H12v-.008z"/></svg>
+    <div class="flex-1 min-w-0">
+        <p class="text-sm font-bold text-amber-900">
+            Hay <?= (int)$otherPeriodsAlert['total'] ?> factura(s) pendiente(s) por aprobar en otros periodos
+        </p>
+        <p class="text-xs text-amber-800 mt-1">
+            <?php foreach (array_slice($otherPeriodsAlert['periods'], 0, 5) as $op): ?>
+            <a href="?period=<?= htmlspecialchars($op['period']) ?>&status=pending" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-amber-200 hover:border-amber-400 mr-1 mb-1 font-semibold">
+                <?= htmlspecialchars(formatPeriod($op['period'])) ?>
+                <span class="text-amber-700"><?= (int)$op['n'] ?></span>
+            </a>
+            <?php endforeach; ?>
+            <a href="?period=all&status=pending" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-900 text-white hover:bg-amber-800 ml-1 font-bold">
+                Ver todas →
+            </a>
+        </p>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Filters -->
 <div data-tour="filters" class="surface-card p-3 mb-4 flex flex-col lg:flex-row gap-3 items-stretch lg:items-center">
     <div class="flex items-center gap-2">
-        <a href="?period=<?= $prevPeriod ?>&status=<?= urlencode($filterStatus) ?>&client_id=<?= $filterClient ?>" class="icon-btn">
+        <a href="?period=<?= $prevPeriod ?>&status=<?= urlencode($filterStatus) ?>&client_id=<?= $filterClient ?>" class="icon-btn" title="Mes anterior">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
         </a>
-        <span class="px-3 py-2 rounded-xl bg-stone-50 text-sm font-bold text-slate-900 min-w-[120px] text-center"><?= $periodLabel ?></span>
-        <a href="?period=<?= $nextPeriod ?>&status=<?= urlencode($filterStatus) ?>&client_id=<?= $filterClient ?>" class="icon-btn">
+        <span class="px-3 py-2 rounded-xl <?= $showAllPeriods ? 'bg-blue-100 text-blue-900' : 'bg-stone-50 text-slate-900' ?> text-sm font-bold min-w-[140px] text-center"><?= $periodLabel ?></span>
+        <a href="?period=<?= $nextPeriod ?>&status=<?= urlencode($filterStatus) ?>&client_id=<?= $filterClient ?>" class="icon-btn" title="Mes siguiente">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
         </a>
+        <?php if ($showAllPeriods): ?>
+        <a href="?period=<?= date('Y-m') ?>&status=<?= urlencode($filterStatus) ?>&client_id=<?= $filterClient ?>" class="text-xs px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-700 font-bold">
+            Volver al mes actual
+        </a>
+        <?php else: ?>
+        <a href="?period=all&status=<?= urlencode($filterStatus) ?>&client_id=<?= $filterClient ?>" class="text-xs px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-700 font-bold" title="Mostrar facturas de todos los periodos">
+            Todos
+        </a>
+        <?php endif; ?>
     </div>
 
     <form method="GET" class="flex flex-col sm:flex-row gap-2 lg:ml-auto w-full lg:w-auto">
