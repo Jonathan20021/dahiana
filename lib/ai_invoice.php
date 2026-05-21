@@ -466,6 +466,15 @@ function aiSystemPrompt() {
         "- Si NO puedes leer un campo dejalo vacio (string vacia o 0 numerico) y BAJA la confianza. NO inventes.",
         "- En notes pon cualquier observacion: 'NCF parcialmente borroso', 'Total ilegible, calculado desde subtotal+itbis', etc.",
         "",
+        "=== AUTO-VERIFICACION FINAL (obligatoria antes de devolver) ===",
+        "1. Re-leer el documento mentalmente y comparar cada campo con lo que ves.",
+        "2. Verificar suma: si |subtotal + itbis + propina + transporte - total| > 2.00, hay error de lectura - re-extrae.",
+        "3. Verificar RNC: 9 o 11 digitos exactos, solo numeros. Si el primer caracter es letra, no es RNC.",
+        "4. Verificar NCF: 11 caracteres, empieza con B o E mas dos digitos. 'B0100123456' es correcto, 'BO1OO123456' (con O y letra) NO.",
+        "5. Verificar fecha: debe ser plausible (entre 2020 y hoy + 30 dias).",
+        "6. Si algun check falla, devuelve string vacio en ese campo y reduce confianza 20 puntos.",
+        "7. Si la imagen tiene MULTIPLES facturas o esta cortada, extrae SOLO la que se ve completa y agrega nota: 'Imagen contiene varias facturas, se extrajo la principal'.",
+        "",
         "=== EJEMPLOS DE EXTRACCION ===",
         "Ejemplo 1 (compra combustible, B02, RNC 9 digitos):",
         '{"doc_type":"compra","date_doc":"2026-03-15","date_payment":"","rnc":"131611176","counterparty_name":"ESTACION SHELL PUNTA CANA","ncf":"B0200001234","ncf_modified":"","ncf_type":"B02","concept":"Combustible diesel","expense_category":"02","income_type":"","identification_type":"1","payment_method":"03","currency":"DOP","subtotal":1500.00,"itbis":270.00,"propina_legal":0.00,"transporte":0.00,"isr_retention":0.00,"itbis_retention":0.00,"other_taxes":0.00,"total":1770.00,"confidence":0.95,"notes":""}',
@@ -823,94 +832,148 @@ function aiExtractWithConsensus($dataUrl, $hintBlock, $cfg, $secondaryModel) {
 }
 
 /**
- * Compara dos extracciones y devuelve datos solo cuando coinciden.
- * Donde difieren: usa el valor del modelo A (principal) pero baja la confianza
- * y agrega warning explicito identificando el campo divergente.
+ * Compara dos extracciones y construye un consenso enriquecido:
+ *  - Confianza POR CAMPO (_field_confidence): 1.0 acuerdo exacto, 0.7 dentro de tolerancia,
+ *    0.4 disagreement con preferencia clara, 0.2 disagreement genuino.
+ *  - Lista de campos criticos divergentes (_critical_fields) que requieren revision humana.
+ *  - Flag _needs_review boolean para bloquear auto-aprobacion cuando hay dudas serias.
+ *  - Confianza global ponderada por importancia de cada campo.
  */
 function aiBuildConsensus(array $a, array $b, string $modelA, string $modelB) {
-    // Normalizar primero ambos (por igual)
     $a = aiNormalizeExtraction($a);
     $b = aiNormalizeExtraction($b);
 
     $warnings = array_merge($a['_warnings'] ?? [], $b['_warnings'] ?? []);
-    $consensus = $a; // base
+    $consensus = $a;
     $disagreements = [];
-    $agreements = 0;
-    $totalChecked = 0;
+    $criticalFields = [];
+    $fieldConfidence = [];
 
-    // Campos string criticos: comparacion exacta tras normalizacion
-    $strictKeys = ['rnc', 'ncf', 'ncf_type', 'doc_type', 'date_doc'];
+    // Pesos por importancia (campos criticos pesan mas en la confianza global)
+    $weights = [
+        'rnc' => 3.0, 'ncf' => 3.0, 'total' => 3.0,
+        'date_doc' => 2.0, 'ncf_type' => 2.0, 'doc_type' => 2.0,
+        'subtotal' => 1.5, 'itbis' => 1.5,
+        'counterparty_name' => 1.0, 'concept' => 0.5,
+        'propina_legal' => 1.0, 'transporte' => 1.0,
+        'isr_retention' => 1.0, 'itbis_retention' => 1.0, 'other_taxes' => 0.5,
+        'expense_category' => 0.8, 'income_type' => 0.8,
+        'identification_type' => 0.8, 'payment_method' => 0.5,
+    ];
+
+    // Campos CRITICOS: cualquier disagreement → marca para revision
+    $criticalKeys = ['rnc', 'ncf', 'total'];
+
+    // === Strings criticos ===
+    $strictKeys = ['rnc', 'ncf', 'ncf_type', 'doc_type', 'date_doc',
+                   'expense_category', 'income_type', 'identification_type', 'payment_method'];
     foreach ($strictKeys as $k) {
         $va = (string)($a[$k] ?? '');
         $vb = (string)($b[$k] ?? '');
-        $totalChecked++;
         if ($va === $vb) {
-            $agreements++;
             $consensus[$k] = $va;
+            $fieldConfidence[$k] = $va === '' ? 0.5 : 1.0; // vacio acordado = 0.5
         } else {
             $disagreements[] = "{$k}: '{$va}' vs '{$vb}'";
-            // Preferir el no-vacio si uno esta vacio
-            if ($va === '' && $vb !== '') $consensus[$k] = $vb;
-            else $consensus[$k] = $va;
+            if (in_array($k, $criticalKeys, true)) $criticalFields[] = $k;
+            if ($va === '' && $vb !== '') {
+                $consensus[$k] = $vb;
+                $fieldConfidence[$k] = 0.5;
+            } elseif ($vb === '' && $va !== '') {
+                $consensus[$k] = $va;
+                $fieldConfidence[$k] = 0.5;
+            } else {
+                // Desacuerdo real entre dos valores no vacios
+                $consensus[$k] = $va;
+                $fieldConfidence[$k] = 0.25;
+            }
         }
     }
 
-    // Campos numericos: tolerancia 1 RD$ o 1% (lo que sea mayor)
-    $numKeys = ['subtotal', 'itbis', 'propina_legal', 'transporte', 'isr_retention', 'itbis_retention', 'other_taxes', 'total'];
+    // === Numericos: tolerancia escalada ===
+    $numKeys = ['subtotal', 'itbis', 'propina_legal', 'transporte',
+                'isr_retention', 'itbis_retention', 'other_taxes', 'total'];
     foreach ($numKeys as $k) {
         $va = (float)($a[$k] ?? 0);
         $vb = (float)($b[$k] ?? 0);
-        $totalChecked++;
-        $tolerance = max(1.0, max(abs($va), abs($vb)) * 0.01);
+        $maxAbs = max(abs($va), abs($vb));
+        $tolerance = max(1.0, $maxAbs * 0.01);
+
         if (abs($va - $vb) <= $tolerance) {
-            $agreements++;
-            // Promediar cuando coinciden dentro de la tolerancia (corrige errores de OCR de un centavo)
             $consensus[$k] = round(($va + $vb) / 2, 2);
+            $fieldConfidence[$k] = ($maxAbs == 0) ? 0.9 : 1.0;
         } else {
             $disagreements[] = "{$k}: " . number_format($va, 2) . " vs " . number_format($vb, 2);
-            // Preferir el no-cero si uno es cero (a menudo el otro lo capturo y este lo perdio)
-            if ($va == 0 && $vb != 0) $consensus[$k] = $vb;
-            elseif ($vb == 0 && $va != 0) $consensus[$k] = $va;
-            else $consensus[$k] = $va; // primary wins en desacuerdo genuino
+            $relDiff = $maxAbs > 0 ? abs($va - $vb) / $maxAbs : 0;
+            if (in_array($k, $criticalKeys, true) && $relDiff > 0.05) {
+                $criticalFields[] = $k;
+            }
+
+            if ($va == 0 && $vb != 0) {
+                $consensus[$k] = $vb;
+                $fieldConfidence[$k] = 0.55;
+            } elseif ($vb == 0 && $va != 0) {
+                $consensus[$k] = $va;
+                $fieldConfidence[$k] = 0.55;
+            } else {
+                $consensus[$k] = $va;
+                // Disagreement genuino: confianza cae mas si la diferencia relativa es grande
+                $fieldConfidence[$k] = max(0.15, 0.65 - $relDiff);
+            }
         }
     }
 
-    // Campos secundarios (counterparty, concept): usar el mas largo (probablemente mas completo)
+    // === Texto secundario: preferir el que contiene al otro ===
     foreach (['counterparty_name', 'concept'] as $k) {
-        $va = (string)($a[$k] ?? '');
-        $vb = (string)($b[$k] ?? '');
-        if ($va === '' && $vb !== '') $consensus[$k] = $vb;
-        elseif ($vb === '' && $va !== '') $consensus[$k] = $va;
-        elseif (strlen($vb) > strlen($va) * 1.5) $consensus[$k] = $vb; // mucho mas largo
-        // si no, queda el de $a
+        $va = trim((string)($a[$k] ?? ''));
+        $vb = trim((string)($b[$k] ?? ''));
+        if ($va === '' && $vb !== '') { $consensus[$k] = $vb; $fieldConfidence[$k] = 0.6; }
+        elseif ($vb === '' && $va !== '') { $consensus[$k] = $va; $fieldConfidence[$k] = 0.6; }
+        elseif ($va === $vb) { $consensus[$k] = $va; $fieldConfidence[$k] = $va === '' ? 0.5 : 1.0; }
+        else {
+            $vaUp = mb_strtoupper($va);
+            $vbUp = mb_strtoupper($vb);
+            if (mb_strpos($vaUp, $vbUp) !== false) { $consensus[$k] = $va; $fieldConfidence[$k] = 0.85; }
+            elseif (mb_strpos($vbUp, $vaUp) !== false) { $consensus[$k] = $vb; $fieldConfidence[$k] = 0.85; }
+            else {
+                $consensus[$k] = strlen($va) >= strlen($vb) ? $va : $vb;
+                $fieldConfidence[$k] = 0.55;
+            }
+        }
     }
 
-    // Confianza calibrada por agreement ratio
-    $agreementRatio = $totalChecked > 0 ? ($agreements / $totalChecked) : 0;
-    $avgConf = (((float)($a['confidence'] ?? 0)) + ((float)($b['confidence'] ?? 0))) / 2;
-
-    // Si 100% acuerdo: boost a 0.95+ (alta confianza calibrada)
-    // Si 80%+ acuerdo: confianza promedio sin penalizar
-    // Si <80%: penalizar proporcionalmente
-    if ($agreementRatio >= 1.0) {
-        $consensus['confidence'] = min(0.99, max($avgConf, 0.92));
-    } elseif ($agreementRatio >= 0.8) {
-        $consensus['confidence'] = $avgConf;
-    } else {
-        $consensus['confidence'] = round($avgConf * $agreementRatio, 2);
+    // === Confianza global ponderada por campo + agreement ratio ===
+    $sumW = 0; $sumWC = 0;
+    foreach ($fieldConfidence as $k => $conf) {
+        $w = $weights[$k] ?? 1.0;
+        $sumW += $w;
+        $sumWC += $w * $conf;
     }
+    $weightedConf = $sumW > 0 ? ($sumWC / $sumW) : 0.5;
+    $avgModelConf = (((float)($a['confidence'] ?? 0)) + ((float)($b['confidence'] ?? 0))) / 2;
+    // Mezcla 60% el ponderado de campos + 40% lo que los modelos auto-reportaron
+    $finalConf = round(($weightedConf * 0.6) + ($avgModelConf * 0.4), 2);
+
+    // Boost si fue acuerdo TOTAL (todos los strictKeys + numKeys exactos)
+    if (empty($disagreements)) $finalConf = min(0.99, max($finalConf, 0.93));
+
+    $consensus['confidence'] = $finalConf;
 
     if (!empty($disagreements)) {
-        $warnings[] = 'Modelos {' . $modelA . '} y {' . $modelB . '} difieren en: ' . implode('; ', array_slice($disagreements, 0, 5));
+        $warnings[] = "Cruce {$modelA} vs {$modelB} difiere en: " . implode('; ', array_slice($disagreements, 0, 6));
     } else {
-        $warnings[] = "Validacion cruzada {$modelA} + {$modelB}: 100% acuerdo.";
+        $warnings[] = "Cruce {$modelA} + {$modelB}: 100% acuerdo.";
     }
 
     $consensus['_warnings'] = $warnings;
+    $consensus['_field_confidence'] = $fieldConfidence;
+    $consensus['_critical_fields'] = array_values(array_unique($criticalFields));
+    $consensus['_needs_review'] = (!empty($criticalFields)) || ($finalConf < 0.6);
     $consensus['_consensus'] = [
         'models'         => [$modelA, $modelB],
-        'agreement'      => $totalChecked > 0 ? round($agreementRatio, 2) : null,
+        'agreement'      => 1 - (count($disagreements) / max(1, count($fieldConfidence))),
         'disagreements'  => count($disagreements),
+        'critical'       => count($criticalFields),
     ];
     return $consensus;
 }

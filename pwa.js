@@ -591,6 +591,236 @@
         document.addEventListener('DOMContentLoaded', function() { document.body.classList.add('pwa-standalone'); });
     }
 
+    // ===== Capa de fluidez global (page transitions + micro-interacciones)
+    initFluidityLayer();
+
+    function initFluidityLayer() {
+        // 1) View Transitions API en navegacion same-origin (Chrome/Edge)
+        const supportsViewTransitions = 'startViewTransition' in document;
+        if (supportsViewTransitions) {
+            document.addEventListener('click', function(e) {
+                const a = e.target.closest('a');
+                if (!a) return;
+                if (a.target === '_blank' || a.hasAttribute('download')) return;
+                if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+                const href = a.getAttribute('href');
+                if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) return;
+                // Mismo origen?
+                try {
+                    const url = new URL(href, window.location.href);
+                    if (url.origin !== window.location.origin) return;
+                    if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+                } catch (err) { return; }
+
+                e.preventDefault();
+                showPageLoading();
+                // Soft transition: animacion CSS + carga real
+                document.startViewTransition(function() {
+                    return new Promise(function(resolve) {
+                        window.location.href = href;
+                        // resolve nunca se llama porque navegamos; el browser corta
+                        setTimeout(resolve, 100);
+                    });
+                });
+            });
+        } else {
+            // Fallback: barra de progreso visible al clic + onbeforeunload
+            document.addEventListener('click', function(e) {
+                const a = e.target.closest('a');
+                if (!a) return;
+                if (a.target === '_blank' || a.hasAttribute('download')) return;
+                if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+                const href = a.getAttribute('href');
+                if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) return;
+                try {
+                    const url = new URL(href, window.location.href);
+                    if (url.origin !== window.location.origin) return;
+                } catch (err) { return; }
+                showPageLoading();
+            });
+        }
+        document.addEventListener('submit', function(e) {
+            const form = e.target;
+            if (form.matches('form') && !form.hasAttribute('data-no-loading')) {
+                showPageLoading();
+            }
+        });
+        window.addEventListener('pageshow', function() { hidePageLoading(); });
+        window.addEventListener('popstate', function() { hidePageLoading(); });
+
+        // 2) Animacion de entrada para cards
+        if ('IntersectionObserver' in window) {
+            const cards = document.querySelectorAll('.surface-card, .stat-card');
+            if (cards.length > 0 && cards.length <= 40) {
+                cards.forEach(function(c, i) {
+                    c.style.opacity = '0';
+                    c.style.transform = 'translateY(8px)';
+                    c.style.transition = 'opacity .35s ease ' + Math.min(i * 30, 300) + 'ms, transform .35s ease ' + Math.min(i * 30, 300) + 'ms';
+                });
+                requestAnimationFrame(function() {
+                    cards.forEach(function(c) {
+                        c.style.opacity = '';
+                        c.style.transform = '';
+                    });
+                });
+            }
+        }
+
+        // 3) Ripple effect en botones primarios
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.btn-dark, .pwa-btn-primary, .ir-btn-dark');
+            if (!btn || btn.disabled) return;
+            const r = btn.getBoundingClientRect();
+            const ripple = document.createElement('span');
+            ripple.className = 'pwa-ripple';
+            ripple.style.left = (e.clientX - r.left) + 'px';
+            ripple.style.top = (e.clientY - r.top) + 'px';
+            btn.appendChild(ripple);
+            setTimeout(function() { ripple.remove(); }, 600);
+        });
+
+        // 4) Inyectar estilos de fluidez
+        const fluidCss = `
+            html { color-scheme: light; }
+            * { -webkit-tap-highlight-color: transparent; }
+            ::view-transition-old(root) {
+                animation: pwaFadeOut .18s ease both;
+            }
+            ::view-transition-new(root) {
+                animation: pwaFadeIn .22s ease both;
+            }
+            @keyframes pwaFadeOut { to { opacity: 0; transform: translateY(-6px); } }
+            @keyframes pwaFadeIn  { from { opacity: 0; transform: translateY(8px); } }
+
+            /* Barra de carga superior */
+            .pwa-page-bar {
+                position: fixed; top: 0; left: 0; right: 0; height: 3px;
+                z-index: 10000;
+                background: linear-gradient(90deg, #0F172A, #2563EB, #0F172A);
+                background-size: 200% 100%;
+                transform: scaleX(0); transform-origin: left;
+                opacity: 0;
+                transition: opacity .15s ease;
+                animation: pwaPageBarSlide 1.2s linear infinite;
+                pointer-events: none;
+            }
+            .pwa-page-bar.is-loading {
+                opacity: 1;
+                animation: pwaPageBarGrow 8s cubic-bezier(.05,.7,.1,1) forwards, pwaPageBarSlide 1.2s linear infinite;
+            }
+            @keyframes pwaPageBarGrow {
+                0%   { transform: scaleX(0); }
+                30%  { transform: scaleX(0.4); }
+                70%  { transform: scaleX(0.8); }
+                100% { transform: scaleX(0.95); }
+            }
+            @keyframes pwaPageBarSlide {
+                0%   { background-position: 200% 0; }
+                100% { background-position: 0 0; }
+            }
+
+            /* Ripple */
+            .pwa-ripple {
+                position: absolute;
+                border-radius: 999px;
+                width: 6px; height: 6px;
+                background: rgba(255,255,255,0.45);
+                transform: translate(-50%, -50%) scale(1);
+                animation: pwaRipple .55s cubic-bezier(.2,.6,.2,1) forwards;
+                pointer-events: none;
+            }
+            @keyframes pwaRipple {
+                from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                to   { opacity: 0; transform: translate(-50%, -50%) scale(45); }
+            }
+            .btn-dark, .pwa-btn-primary, .ir-btn-dark { position: relative; overflow: hidden; }
+
+            /* Skeleton loader (reusable) */
+            .pwa-skeleton {
+                background: linear-gradient(90deg, #F1F5F9 0%, #E2E8F0 50%, #F1F5F9 100%);
+                background-size: 200% 100%;
+                animation: pwaSkeleton 1.4s ease-in-out infinite;
+                border-radius: 8px;
+            }
+            @keyframes pwaSkeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+            /* Suavizar imagenes mientras cargan */
+            img:not([data-no-fade]) {
+                opacity: 0;
+                transition: opacity .25s ease;
+            }
+            img:not([data-no-fade]).loaded,
+            img:not([data-no-fade])[complete] { opacity: 1; }
+
+            /* Mejorar focus visible */
+            button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+                outline: 2px solid #2563EB;
+                outline-offset: 2px;
+                border-radius: 6px;
+            }
+
+            /* Smooth scroll */
+            html { scroll-behavior: smooth; }
+
+            /* Hover micro-lift en cards interactivas */
+            a.surface-card, button.surface-card {
+                transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+            }
+            a.surface-card:hover, button.surface-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 24px rgba(15,23,42,0.08);
+            }
+
+            /* Reducir animaciones si el usuario lo pidio */
+            @media (prefers-reduced-motion: reduce) {
+                *, *::before, *::after {
+                    animation-duration: 0.01ms !important;
+                    transition-duration: 0.01ms !important;
+                }
+                html { scroll-behavior: auto; }
+            }
+        `;
+        const fluidStyle = document.createElement('style');
+        fluidStyle.textContent = fluidCss;
+        document.head.appendChild(fluidStyle);
+
+        // 5) Crear barra de carga global
+        const bar = document.createElement('div');
+        bar.id = 'pwaPageBar';
+        bar.className = 'pwa-page-bar';
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.appendChild(bar);
+        });
+
+        // 6) Image fade-in
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('img').forEach(function(img) {
+                if (img.complete && img.naturalHeight > 0) {
+                    img.classList.add('loaded');
+                } else {
+                    img.addEventListener('load', function() { img.classList.add('loaded'); }, { once: true });
+                    img.addEventListener('error', function() { img.classList.add('loaded'); }, { once: true });
+                }
+            });
+        });
+    }
+    function showPageLoading() {
+        let bar = document.getElementById('pwaPageBar');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'pwaPageBar';
+            bar.className = 'pwa-page-bar';
+            document.body.appendChild(bar);
+        }
+        bar.classList.add('is-loading');
+    }
+    function hidePageLoading() {
+        const bar = document.getElementById('pwaPageBar');
+        if (bar) bar.classList.remove('is-loading');
+    }
+    window.pwaShowLoading = showPageLoading;
+    window.pwaHideLoading = hidePageLoading;
+
     // ===== Helpers
     window.pwaQueueRetry = function() {
         if ('serviceWorker' in navigator && 'SyncManager' in window) {
