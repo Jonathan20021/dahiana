@@ -20,7 +20,14 @@ $isLoggedIn  = isset($_SESSION['user_id']);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#ECECEC">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="<?= htmlspecialchars($companyName) ?>">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.php">
+    <link rel="icon" type="image/svg+xml" href="pwa_icon.php?size=192">
+    <link rel="apple-touch-icon" href="pwa_icon.php?size=192">
     <title><?= htmlspecialchars($page_title) ?> &middot; <?= htmlspecialchars($companyName) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -153,6 +160,111 @@ $isLoggedIn  = isset($_SESSION['user_id']);
         }
         .topbar-pin:hover { background: #E5E7EB; color: #0F172A; }
 
+        /* Topbar search */
+        .topbar-search {
+            display: inline-flex; align-items: center; gap: 8px;
+            min-width: 180px; height: 36px; padding: 0 12px;
+            border-radius: 12px;
+            background: #F4F4F5; color: #64748B;
+            font-size: 13px; font-weight: 500;
+            transition: all .15s ease;
+        }
+        .topbar-search:hover { background: #E5E7EB; color: #0F172A; }
+        .topbar-search:hover svg { color: #475569; }
+        .topbar-kbd {
+            margin-left: auto; display: inline-flex; gap: 2px;
+        }
+        .topbar-kbd span {
+            font-family: ui-monospace, monospace;
+            font-size: 10px; font-weight: 700;
+            background: #fff; border: 1px solid #E5E7EB; border-bottom-width: 2px;
+            padding: 1px 5px; border-radius: 4px; color: #475569;
+        }
+        .topbar-notif {
+            position: relative;
+            width: 36px; height: 36px; border-radius: 12px;
+            background: #F4F4F5; color: #475569;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: all .15s ease;
+        }
+        .topbar-notif:hover { background: #E5E7EB; color: #0F172A; }
+
+        /* Search palette */
+        .palette-overlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(4px);
+            display: flex; align-items: flex-start; justify-content: center;
+            padding-top: 12vh;
+        }
+        .palette-overlay.hidden { display: none; }
+        .palette-box {
+            width: 100%; max-width: 620px;
+            background: #fff; border-radius: 18px;
+            box-shadow: 0 25px 80px rgba(15, 23, 42, 0.3);
+            overflow: hidden;
+            animation: paletteIn .18s ease;
+        }
+        @keyframes paletteIn { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: none; } }
+        .palette-input-wrap {
+            display: flex; align-items: center; gap: 10px;
+            padding: 16px 18px; border-bottom: 1px solid #F1F5F9;
+        }
+        .palette-input {
+            flex: 1; border: none; outline: none;
+            font-size: 16px; font-weight: 500; color: #0F172A;
+            background: transparent;
+        }
+        .palette-input::placeholder { color: #94A3B8; }
+        .palette-kbd { font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700; padding: 2px 6px; background: #F4F4F5; border: 1px solid #E5E7EB; border-radius: 4px; color: #64748B; }
+        .palette-results { max-height: 60vh; overflow-y: auto; padding: 8px; }
+        .palette-group-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #94A3B8; padding: 10px 12px 6px 12px; }
+        .palette-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 12px; border-radius: 10px;
+            color: #0F172A; cursor: pointer;
+            transition: background .12s ease;
+        }
+        .palette-item:hover, .palette-item.is-active { background: #F4F4F5; }
+        .palette-item.is-active { background: #DBEAFE; }
+        .palette-item-icon {
+            width: 32px; height: 32px; border-radius: 10px;
+            background: #F1F5F9; color: #475569;
+            display: inline-flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .palette-item.is-active .palette-item-icon { background: #BFDBFE; color: #1D4ED8; }
+        .palette-item-main { flex: 1; min-width: 0; }
+        .palette-item-title { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .palette-item-sub { font-size: 11px; color: #64748B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+        .palette-item-tag { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #F4F4F5; color: #475569; }
+        .palette-empty { text-align: center; padding: 40px 20px; color: #94A3B8; font-size: 13px; }
+        .palette-footer { padding: 10px 16px; border-top: 1px solid #F1F5F9; display: flex; gap: 14px; font-size: 11px; color: #94A3B8; }
+        .palette-footer kbd { font-family: ui-monospace, monospace; font-size: 10px; font-weight: 700; padding: 1px 5px; background: #F4F4F5; border: 1px solid #E5E7EB; border-radius: 4px; }
+
+        /* Notifications panel */
+        .notif-panel {
+            position: fixed; top: 70px; right: 20px; z-index: 90;
+            width: 360px; max-width: calc(100vw - 24px);
+            background: #fff; border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(15, 23, 42, 0.22);
+            border: 1px solid #EEF0F2;
+            overflow: hidden;
+            animation: paletteIn .18s ease;
+        }
+        .notif-panel.hidden { display: none; }
+        .notif-head { padding: 14px 16px; border-bottom: 1px solid #F4F4F5; display: flex; align-items: center; justify-content: space-between; }
+        .notif-title { font-size: 14px; font-weight: 800; color: #0F172A; }
+        .notif-list { max-height: 60vh; overflow-y: auto; }
+        .notif-item { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #F8FAFC; transition: background .12s ease; }
+        .notif-item:hover { background: #FAFAFA; }
+        .notif-item:last-child { border-bottom: 0; }
+        .notif-item-icon { width: 36px; height: 36px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .notif-item-main { flex: 1; min-width: 0; }
+        .notif-item-title { font-size: 13px; font-weight: 700; color: #0F172A; }
+        .notif-item-sub { font-size: 11px; color: #64748B; margin-top: 1px; }
+        .notif-empty { padding: 40px 20px; text-align: center; color: #94A3B8; font-size: 13px; }
+
         <?= $head_extra ?>
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -183,9 +295,25 @@ $isLoggedIn  = isset($_SESSION['user_id']);
                         </div>
                     </div>
 
-                    <!-- Right: date + actions -->
+                    <!-- Right: search + notifications + date + actions -->
                     <div class="flex items-center gap-2 flex-wrap lg:shrink-0 lg:justify-end">
-                        <span class="hidden lg:inline-flex items-center gap-2 rounded-full bg-stone-100 px-3.5 py-1.5 text-xs font-semibold text-slate-600">
+                        <?php
+                        $topbarIsAdmin = canAccessArea($_SESSION['role'] ?? '', 'admin');
+                        if ($topbarIsAdmin):
+                        ?>
+                        <button type="button" onclick="openSearchPalette()" class="topbar-search">
+                            <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            <span class="hidden sm:inline">Buscar...</span>
+                            <span class="hidden md:inline-flex topbar-kbd">
+                                <span>Ctrl</span><span>K</span>
+                            </span>
+                        </button>
+                        <?php endif; ?>
+                        <button type="button" onclick="toggleNotifPanel()" id="notifTrigger" class="topbar-notif" title="Notificaciones">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                            <span id="notifBadge" class="hidden absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold inline-flex items-center justify-center"></span>
+                        </button>
+                        <span class="hidden xl:inline-flex items-center gap-2 rounded-full bg-stone-100 px-3.5 py-1.5 text-xs font-semibold text-slate-600">
                             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25"/></svg>
                             <?= $today ?>
                         </span>

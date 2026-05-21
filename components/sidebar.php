@@ -36,6 +36,8 @@ $sidebarGroupsClient = [
     'Principal' => [
         ['url' => 'client_dashboard.php', 'label' => 'Mi Panel', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'],
         ['url' => 'client_uploads.php', 'label' => 'Subir facturas (IA)', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>'],
+        ['url' => 'client_calendar.php', 'label' => 'Mi calendario fiscal', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 16l2 2 4-4"/></svg>'],
+        ['url' => 'client_profile.php', 'label' => 'Mi perfil', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'],
     ],
 ];
 
@@ -88,6 +90,8 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
             'admin_settings.php'        => 'nav-settings',
             'client_dashboard.php'      => 'nav-dashboard',
             'client_uploads.php'        => 'nav-uploads',
+            'client_calendar.php'       => 'nav-calendar',
+            'client_profile.php'        => 'nav-profile',
         ];
         ?>
         <?php foreach ($groups as $groupName => $items): ?>
