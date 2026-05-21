@@ -12,9 +12,17 @@ function tgRespondError($chatId, $msg) {
 function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $caption = '') {
     global $pdo;
 
+    // ========= ACK INMEDIATO ANTES DE TODO =========
+    // Enviamos "Recibida..." en cuanto entramos al handler para que el cliente
+    // siempre vea respuesta sub-segundo, sin esperar al rate-limit / download / IA.
+    $ack = tgSendMessage($chatId, "Recibida. Procesando con IA...");
+    $ackMessageId = (int)($ack['result']['message_id'] ?? 0);
+
     // Rate limit: max 30 facturas/hora por chat
     if (!aiCheckRateLimit($chatId, 30)) {
-        tgSendMessage($chatId, "⚠️ Has enviado muchas facturas en poco tiempo. Por seguridad pausamos temporalmente. Intenta de nuevo en 1 hora o contacta a tu asesor si es urgente.");
+        $msg = "⚠️ Has enviado muchas facturas en poco tiempo. Por seguridad pausamos temporalmente. Intenta de nuevo en 1 hora o contacta a tu asesor si es urgente.";
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
+        else tgSendMessage($chatId, $msg);
         return;
     }
 
@@ -25,20 +33,30 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
         $file = $photoOrDoc;
     }
     $fileId = $file['file_id'] ?? null;
-    if (!$fileId) { tgRespondError($chatId, 'No pude leer el archivo.'); return; }
+    if (!$fileId) {
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, '<b>No pude leer el archivo</b>');
+        return;
+    }
 
-    // Validacion de tamano max (mismo limite que portal web)
+    // Validacion de tamano max
     $sizeLimit = max(1, (int)getSetting('openai_max_size_mb', '12')) * 1024 * 1024;
     if (!empty($file['file_size']) && (int)$file['file_size'] > $sizeLimit) {
-        tgSendMessage($chatId, "Archivo demasiado grande. Maximo " . getSetting('openai_max_size_mb', '12') . " MB.");
+        $msg = "Archivo demasiado grande. Maximo " . getSetting('openai_max_size_mb', '12') . " MB.";
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
         return;
     }
 
     $info = tgGetFile($fileId);
-    if (!$info['ok']) { tgRespondError($chatId, 'No pude descargar: ' . $info['error']); return; }
+    if (!$info['ok']) {
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, 'No pude descargar: ' . htmlspecialchars($info['error']));
+        return;
+    }
 
     $remotePath = $info['result']['file_path'] ?? '';
-    if ($remotePath === '') { tgRespondError($chatId, 'Archivo sin ruta.'); return; }
+    if ($remotePath === '') {
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, 'Archivo sin ruta.');
+        return;
+    }
 
     $mime = $file['mime_type'] ?? '';
     if ($mime === '') {
@@ -52,7 +70,8 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
         };
     }
     if (strpos($mime, 'image/') !== 0) {
-        tgSendMessage($chatId, "Solo puedo procesar imagenes (JPG, PNG, WEBP, HEIC). Recibi <code>{$mime}</code>.");
+        $msg = "Solo puedo procesar imagenes (JPG, PNG, WEBP, HEIC). Recibi <code>" . htmlspecialchars($mime) . "</code>.";
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
         return;
     }
 
@@ -60,7 +79,7 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     $filename = 'inv_' . $client['client_id'] . '_tg_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . strtolower($ext);
     $dest = aiUploadsDir() . '/' . $filename;
     if (!tgDownloadFile($remotePath, $dest)) {
-        tgRespondError($chatId, 'No pude descargar el archivo de Telegram.');
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, 'No pude descargar el archivo de Telegram.');
         return;
     }
     $size = @filesize($dest);
@@ -68,7 +87,7 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
 
     if ($sha && aiFindDuplicateUpload((int)$client['client_id'], $sha) > 0) {
         @unlink($dest);
-        tgSendMessage($chatId, "Esta factura ya la habias subido antes. La ignore.");
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, "Esta factura ya la habias subido antes. La ignore.");
         return;
     }
 
@@ -81,10 +100,6 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     ], 'auto');
 
     $pdo->prepare("UPDATE invoice_uploads SET source='telegram' WHERE id=?")->execute([$uploadId]);
-
-    // Feedback instantaneo antes de llamar a la IA (puede tardar 5-10s)
-    $ack = tgSendMessage($chatId, "Recibida. Procesando con IA...");
-    $ackMessageId = (int)($ack['result']['message_id'] ?? 0);
 
     $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
     if (!$autoProcess) {

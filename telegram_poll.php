@@ -27,14 +27,22 @@ if (!$isCli) {
     header('Content-Type: text/plain; charset=utf-8');
 }
 
-// Lock para evitar dos ejecuciones simultaneas
+// Lock para evitar dos ejecuciones simultaneas.
+// Si el lock lleva mas de 5 minutos sin liberarse asumimos que el proceso anterior
+// crasheo y forzamos liberacion (sino el bot quedaria congelado para siempre).
 $LOCK_FILE = __DIR__ . '/uploads/logs/telegram_poll.lock';
 @mkdir(dirname($LOCK_FILE), 0755, true);
+if (is_file($LOCK_FILE) && (time() - @filemtime($LOCK_FILE)) > 300) {
+    echo "Stale lock detected (>5 min). Forcing release.\n";
+    @unlink($LOCK_FILE);
+}
 $lockHandle = @fopen($LOCK_FILE, 'c');
 if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
     echo "Another polling instance is running. Skipping.\n";
     exit;
 }
+// Tocar el lock periodicamente: si el proceso se cuelga, otro cron podra forzar release
+@touch($LOCK_FILE);
 
 $LOG_FILE = __DIR__ . '/uploads/logs/telegram_poll.log';
 
@@ -65,9 +73,8 @@ if (!empty($wh['ok']) && !empty($wh['result']['url'])) {
     tgDeleteWebhook();
 }
 
-// === Recovery: procesar uploads huerfanos antes de pedir nuevos updates ===
-// 1) uploads via telegram en 'uploaded' por >90s -> bg worker fallo o sync fallo
-// 2) uploads en 'processing' por >5min -> proceso anterior crasheo a mitad
+// === Recovery acotada: procesa hasta 2 uploads huerfanos por cron,
+// con tope de 20s para dejar la mayor parte de la ventana al polling de nuevos updates.
 try {
     // Resetear los que llevan demasiado en 'processing' (probable crash anterior)
     $pdo->exec("
@@ -85,19 +92,29 @@ try {
           AND created_at < DATE_SUB(NOW(), INTERVAL 90 SECOND)
           AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
         ORDER BY created_at ASC
-        LIMIT 20
+        LIMIT 2
     ")->fetchAll(PDO::FETCH_COLUMN);
+
+    $recoveryDeadline = microtime(true) + 20.0;
+    $recovered = 0;
     foreach ($stuck as $stuckId) {
+        if (microtime(true) > $recoveryDeadline) {
+            pollLog('Recovery budget exhausted, deferring rest');
+            break;
+        }
         pollLog('Recovering stuck telegram upload', ['upload_id' => $stuckId]);
         try {
             aiProcessUpload((int)$stuckId);
+            $recovered++;
         } catch (Throwable $e) {
             pollLog('Recovery failed', ['upload_id' => $stuckId, 'msg' => $e->getMessage()]);
         }
     }
-    if (!empty($stuck)) {
-        pollLog('Recovery done', ['count' => count($stuck)]);
+    if ($recovered > 0) {
+        pollLog('Recovery done', ['recovered' => $recovered]);
     }
+    // Heartbeat al lock entre operaciones largas
+    @touch($LOCK_FILE);
 } catch (PDOException $e) {
     pollLog('Recovery query failed', ['msg' => $e->getMessage()]);
 }
@@ -123,6 +140,9 @@ while (true) {
         pollLog('Time budget reached, stopping');
         break;
     }
+
+    // Heartbeat al lock cada iteracion para que un segundo cron sepa que estamos vivos
+    @touch($LOCK_FILE);
 
     // Ajustar timeout para no exceder el budget
     $effectiveTimeout = min($longPollTimeout, max(1, (int)$remaining - 2));
