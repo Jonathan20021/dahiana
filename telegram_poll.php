@@ -65,6 +65,43 @@ if (!empty($wh['ok']) && !empty($wh['result']['url'])) {
     tgDeleteWebhook();
 }
 
+// === Recovery: procesar uploads huerfanos antes de pedir nuevos updates ===
+// 1) uploads via telegram en 'uploaded' por >90s -> bg worker fallo o sync fallo
+// 2) uploads en 'processing' por >5min -> proceso anterior crasheo a mitad
+try {
+    // Resetear los que llevan demasiado en 'processing' (probable crash anterior)
+    $pdo->exec("
+        UPDATE invoice_uploads
+        SET status='uploaded'
+        WHERE source = 'telegram'
+          AND status = 'processing'
+          AND created_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+    ");
+
+    $stuck = $pdo->query("
+        SELECT id FROM invoice_uploads
+        WHERE source = 'telegram'
+          AND status = 'uploaded'
+          AND created_at < DATE_SUB(NOW(), INTERVAL 90 SECOND)
+          AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        ORDER BY created_at ASC
+        LIMIT 20
+    ")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($stuck as $stuckId) {
+        pollLog('Recovering stuck telegram upload', ['upload_id' => $stuckId]);
+        try {
+            aiProcessUpload((int)$stuckId);
+        } catch (Throwable $e) {
+            pollLog('Recovery failed', ['upload_id' => $stuckId, 'msg' => $e->getMessage()]);
+        }
+    }
+    if (!empty($stuck)) {
+        pollLog('Recovery done', ['count' => count($stuck)]);
+    }
+} catch (PDOException $e) {
+    pollLog('Recovery query failed', ['msg' => $e->getMessage()]);
+}
+
 // Estado: ultimo update_id procesado, guardado en settings
 $lastOffset = (int)getSetting('telegram_last_offset', 0);
 pollLog('Polling start', ['offset' => $lastOffset]);

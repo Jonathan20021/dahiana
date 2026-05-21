@@ -94,12 +94,23 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
         return;
     }
 
-    // Intentar despachar a worker en background para no bloquear el polling loop.
-    // Asi el bot puede atender otras fotos mientras esta procesa.
-    $spawned = tgSpawnAiWorker($uploadId, $chatId, $ackMessageId);
-    if ($spawned) return;
+    // Despacho a worker en background: SOLO si el admin lo activo explicitamente
+    // y solo despues de probar que arranca en su host. Por defecto procesamos inline
+    // (mas lento si llegan varias fotos a la vez, pero garantizado a funcionar).
+    if (getSetting('telegram_use_bg_worker', '0') === '1') {
+        if (tgSpawnAiWorker($uploadId, $chatId, $ackMessageId)) {
+            return; // worker tomara desde aqui
+        }
+        // Si el spawn fallo, hacemos log y caemos a inline
+        @file_put_contents(
+            __DIR__ . '/../uploads/logs/telegram_poll.log',
+            '[' . date('Y-m-d H:i:s') . "] bg_worker spawn FAILED for upload={$uploadId}, falling back to inline\n",
+            FILE_APPEND
+        );
+    }
 
-    // Fallback: si no se pudo spawn (exec deshabilitado, etc.), procesar inline.
+    // Procesamiento inline (default): el polling loop espera al resultado de IA
+    // pero el ack ya fue enviado, asi que el cliente no nota la diferencia.
     $res = aiProcessUpload($uploadId);
     if (!$res['ok']) {
         $errMsg = "La IA fallo:\n<i>" . htmlspecialchars($res['error']) . "</i>\nEl asesor la procesara manualmente.";
@@ -133,44 +144,55 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
 }
 
 /**
- * Lanza ai_telegram_worker.php en background. Devuelve true si pudo spawn.
- * Si la funcion exec/proc_open esta deshabilitada o el binario php no se halla,
- * devuelve false y el caller hace fallback a procesamiento sync.
+ * Lanza ai_telegram_worker.php en background. Devuelve true SOLO si el worker
+ * realmente arranca (verificado leyendo su log). Si falla, devuelve false y el
+ * caller hace fallback a procesamiento sync.
  */
 function tgSpawnAiWorker(int $uploadId, int $chatId, int $ackMessageId): bool {
-    // Si el host deshabilito exec/proc_open, no hay forma de fork-detach
     $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
     if (in_array('exec', $disabled, true) || !function_exists('exec')) {
         return false;
     }
-    if (in_array('proc_open', $disabled, true) || !function_exists('proc_open')) {
-        // exec con & funciona en linux sin proc_open
-    }
 
-    // Detectar binario PHP: PHP_BINARY es el binario CLI corriendo.
     $phpBin = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
     $worker = __DIR__ . '/../ai_telegram_worker.php';
     if (!is_file($worker)) return false;
 
+    $workerLog = __DIR__ . '/../uploads/logs/ai_telegram_worker.log';
+    $beforeSize = is_file($workerLog) ? @filesize($workerLog) : 0;
+
     $isWin = stripos(PHP_OS, 'WIN') === 0;
     if ($isWin) {
-        // Windows: lanzar con start /B (background sin ventana)
         $cmd = sprintf('start /B "" %s %s %d %d %d',
             escapeshellarg($phpBin),
             escapeshellarg($worker),
             $uploadId, $chatId, $ackMessageId);
         @pclose(@popen($cmd, 'r'));
-        return true;
+    } else {
+        // Linux: probar nohup + & en background
+        $cmd = sprintf('nohup %s %s %d %d %d > /dev/null 2>&1 &',
+            escapeshellarg($phpBin),
+            escapeshellarg($worker),
+            $uploadId, $chatId, $ackMessageId);
+        @exec($cmd);
     }
 
-    // Linux/macOS: ejecutar en background con nohup y redirect a /dev/null.
-    // El & al final desconecta el proceso del shell padre.
-    $cmd = sprintf('nohup %s %s %d %d %d > /dev/null 2>&1 & echo $!',
-        escapeshellarg($phpBin),
-        escapeshellarg($worker),
-        $uploadId, $chatId, $ackMessageId);
-    $pid = @exec($cmd);
-    return $pid !== false && $pid !== '';
+    // Verificar que el worker REALMENTE arranco esperando 1.5s y comparando
+    // tamano del log. Si no escribio nada, asumimos que fallo silenciosamente.
+    usleep(1500000); // 1.5s
+    $afterSize = is_file($workerLog) ? @filesize($workerLog) : 0;
+    if ($afterSize > $beforeSize) {
+        return true; // worker escribio "start" -> arranco
+    }
+    // Tambien aceptamos si el upload cambio a 'processing' o ya termino
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT status FROM invoice_uploads WHERE id=?");
+        $stmt->execute([$uploadId]);
+        $st = (string)$stmt->fetchColumn();
+        if (in_array($st, ['processing','extracted','approved','error'], true)) return true;
+    } catch (PDOException $e) {}
+    return false;
 }
 
 function tgHandleMessage(array $msg) {
