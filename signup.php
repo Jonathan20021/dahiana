@@ -117,8 +117,17 @@ function renderField($field, $catalog, $isReq, $taxRegimes, $operationTypes) {
 <html lang="es" class="h-full">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="<?= htmlspecialchars($companyName) ?>">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.php">
+    <link rel="icon" type="image/svg+xml" href="pwa_icon.php?size=192">
+    <link rel="apple-touch-icon" href="pwa_icon.php?size=192">
     <title>Registro &middot; <?= htmlspecialchars($companyName) ?></title>
+    <script src="pwa.js" defer></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

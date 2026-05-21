@@ -13,6 +13,13 @@ $periodLabel = $months[(int)substr($period, 5, 2) - 1] . ' ' . substr($period, 0
 $prevPeriod = date('Y-m', strtotime($period . '-01 -1 month'));
 $nextPeriod = date('Y-m', strtotime($period . '-01 +1 month'));
 
+// Upload via PWA Share Target -> tratarlo como upload normal
+$isShareTarget = ($_GET['via'] ?? '') === 'share';
+if ($isShareTarget && $_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_FILES['files']['name'][0])) {
+    $_POST['action'] = 'upload';
+    if (empty($_POST['doc_type'])) $_POST['doc_type'] = 'auto';
+}
+
 // Upload handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'upload') {
     $docTypeHint = $_POST['doc_type'] ?? 'auto';

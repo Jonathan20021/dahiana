@@ -353,14 +353,11 @@ window.__kbMap = <?= json_encode($kbMap) ?>;
             if (overlay.classList.contains('hidden')) openSearchPalette();
             else closeSearchPalette();
         }
-        if (e.key === '/' && !overlay.classList.contains('hidden') === false) {
-            // forward slash to open (vim-like) - only if not in input
+        if (e.key === '/' && overlay.classList.contains('hidden')) {
             const t = e.target;
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            if (overlay.classList.contains('hidden')) {
-                e.preventDefault();
-                openSearchPalette();
-            }
+            e.preventDefault();
+            openSearchPalette();
         }
     });
 })();

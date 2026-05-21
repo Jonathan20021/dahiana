@@ -19,15 +19,25 @@ $isLoggedIn  = isset($_SESSION['user_id']);
 <html lang="es" class="h-full">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
+    <meta name="theme-color" content="#0F172A" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#0F172A">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="<?= htmlspecialchars($companyName) ?>">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="application-name" content="<?= htmlspecialchars($companyName) ?>">
+    <meta name="msapplication-TileColor" content="#0F172A">
+    <meta name="msapplication-tap-highlight" content="no">
     <link rel="manifest" href="manifest.php">
     <link rel="icon" type="image/svg+xml" href="pwa_icon.php?size=192">
+    <link rel="icon" sizes="32x32" href="pwa_icon.php?size=32">
+    <link rel="icon" sizes="16x16" href="pwa_icon.php?size=48">
     <link rel="apple-touch-icon" href="pwa_icon.php?size=192">
+    <link rel="apple-touch-icon" sizes="180x180" href="pwa_icon.php?size=180">
+    <link rel="apple-touch-icon" sizes="152x152" href="pwa_icon.php?size=152">
+    <link rel="mask-icon" href="pwa_icon.php?size=512" color="#0F172A">
     <title><?= htmlspecialchars($page_title) ?> &middot; <?= htmlspecialchars($companyName) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -265,9 +275,24 @@ $isLoggedIn  = isset($_SESSION['user_id']);
         .notif-item-sub { font-size: 11px; color: #64748B; margin-top: 1px; }
         .notif-empty { padding: 40px 20px; text-align: center; color: #94A3B8; font-size: 13px; }
 
+        /* iOS safe areas */
+        @supports (padding: env(safe-area-inset-top)) {
+            body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+        }
+        /* Mejor interaccion tactil */
+        button, a { -webkit-tap-highlight-color: transparent; }
+        @media (hover: none) {
+            .btn-dark:hover, .btn-soft:hover { transform: none; }
+        }
+        /* Loading state global */
+        .pwa-page-loading { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: #0F172A; z-index: 9999; transform-origin: left; animation: pwaLoadBar 1s ease-in-out infinite; display: none; }
+        .pwa-page-loading.is-active { display: block; }
+        @keyframes pwaLoadBar { 0% { transform: scaleX(0); } 50% { transform: scaleX(0.6); } 100% { transform: scaleX(1); } }
+
         <?= $head_extra ?>
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="pwa.js" defer></script>
 </head>
 <body class="min-h-full">
 <div class="min-h-screen p-2 sm:p-4 lg:p-5">

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0F172A">
+    <title>Sin conexion</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #ECECEC; --ink: #0F172A; }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; background: var(--bg); }
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            color: var(--ink);
+            -webkit-font-smoothing: antialiased;
+            display: flex; align-items: center; justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            background: #fff;
+            border-radius: 28px;
+            padding: 36px 28px;
+            max-width: 420px; width: 100%;
+            box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+            text-align: center;
+        }
+        .icon {
+            width: 88px; height: 88px;
+            margin: 0 auto 22px;
+            border-radius: 28px;
+            background: linear-gradient(135deg, #0F172A, #1E293B);
+            display: inline-flex; align-items: center; justify-content: center;
+            color: #fff;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+            position: relative;
+            overflow: hidden;
+        }
+        .icon::after {
+            content: '';
+            position: absolute; inset: 0;
+            background: radial-gradient(circle at 25% 25%, rgba(59,130,246,0.45), transparent 60%);
+        }
+        .icon svg { position: relative; z-index: 1; }
+        h1 { font-size: 22px; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.01em; }
+        p { color: #475569; font-size: 14px; line-height: 1.55; margin: 0 0 24px; }
+        .status {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: #FEF2F2; color: #DC2626;
+            padding: 6px 14px; border-radius: 999px;
+            font-size: 12px; font-weight: 700;
+            margin-bottom: 20px;
+        }
+        .status .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
+        .status.online { background: #F0FDF4; color: #15803D; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            background: #0F172A; color: #fff;
+            padding: 12px 22px; border-radius: 14px;
+            font-weight: 700; font-size: 14px;
+            border: 0; cursor: pointer;
+            transition: transform .15s ease, background .15s ease;
+            width: 100%;
+        }
+        .btn:hover { background: #1E293B; transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .hint {
+            margin-top: 18px;
+            font-size: 12px;
+            color: #94A3B8;
+            line-height: 1.5;
+        }
+        .tips {
+            margin-top: 22px;
+            padding-top: 20px;
+            border-top: 1px solid #F1F5F9;
+            text-align: left;
+        }
+        .tips h2 { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #94A3B8; margin: 0 0 10px; }
+        .tips ul { margin: 0; padding: 0; list-style: none; }
+        .tips li { font-size: 13px; color: #475569; padding: 4px 0; display: flex; gap: 8px; }
+        .tips li::before { content: '·'; color: #2563EB; font-weight: 800; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 1l22 22"/>
+                <path d="M16.72 11.06A10.94 10.94 0 0119 12.55"/>
+                <path d="M5 12.55a10.94 10.94 0 015.17-2.39"/>
+                <path d="M10.71 5.05A16 16 0 0122.58 9"/>
+                <path d="M1.42 9a15.91 15.91 0 014.7-2.88"/>
+                <path d="M8.53 16.11a6 6 0 016.95 0"/>
+                <line x1="12" y1="20" x2="12.01" y2="20"/>
+            </svg>
+        </div>
+        <span id="status" class="status"><span class="dot"></span><span id="statusText">Sin conexion</span></span>
+        <h1>No hay internet</h1>
+        <p>No se puede cargar la pagina ahora mismo. Puedes seguir consultando lo que ya cargaste antes; cuando regrese la conexion volveras automaticamente.</p>
+        <button class="btn" type="button" onclick="window.location.reload()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Reintentar
+        </button>
+        <p class="hint">Si subes facturas desde el bot de Telegram, no se pierden: el bot las procesara cuando tu telefono recupere senal.</p>
+        <div class="tips">
+            <h2>Mientras tanto</h2>
+            <ul>
+                <li>Las paginas que ya visitaste estan disponibles desde el cache.</li>
+                <li>Tus datos locales (sesion, preferencias) siguen intactos.</li>
+                <li>Apenas regrese la red, esta vista se recargara sola.</li>
+            </ul>
+        </div>
+    </div>
+<script>
+    (function() {
+        var statusEl = document.getElementById('status');
+        var statusText = document.getElementById('statusText');
+        function refresh() {
+            if (navigator.onLine) {
+                statusEl.classList.add('online');
+                statusText.textContent = 'Conexion restablecida';
+                setTimeout(function() { window.location.reload(); }, 700);
+            } else {
+                statusEl.classList.remove('online');
+                statusText.textContent = 'Sin conexion';
+            }
+        }
+        window.addEventListener('online', refresh);
+        window.addEventListener('offline', refresh);
+        refresh();
+    })();
+</script>
+</body>
+</html>
