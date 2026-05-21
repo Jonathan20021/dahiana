@@ -8,6 +8,37 @@ $companyInitials = trim(getSetting('company_initials', 'AF')) ?: 'AF';
 $companySlogan   = trim(getSetting('company_slogan', 'Asesoria Financiera'));
 
 $current_tax_pages = ['admin_tax_calendar.php', 'admin_tax_filings.php', 'admin_invoice_review.php'];
+
+// Badges para cliente
+$clientId = (int)($_SESSION['user_id'] ?? 0);
+$clientUnreadMessages = 0;
+$clientPendingInvoices = 0;
+$clientActiveRequests = 0;
+$clientNewDocs = 0;
+if (!$isAdmin && $clientId > 0) {
+    try {
+        $clientUnreadMessages = (int)$pdo->query("SELECT COUNT(*) FROM general_messages WHERE client_id={$clientId} AND user_id<>{$clientId} AND read_by_client=0")->fetchColumn();
+    } catch (PDOException $e) {}
+    try {
+        $clientPendingInvoices = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE client_id={$clientId} AND status='pendiente'")->fetchColumn();
+    } catch (PDOException $e) {}
+    try {
+        $clientActiveRequests = (int)$pdo->query("SELECT COUNT(*) FROM requests WHERE client_id={$clientId} AND status IN ('pendiente','en_proceso','en_revision')")->fetchColumn();
+    } catch (PDOException $e) {}
+    try {
+        $clientNewDocs = (int)$pdo->query("SELECT COUNT(*) FROM client_documents WHERE client_id={$clientId} AND read_by_client=0")->fetchColumn();
+    } catch (PDOException $e) {}
+}
+
+// Badges para admin
+$adminUnreadMessages = 0;
+if ($isAdmin) {
+    try {
+        $adminId = (int)($_SESSION['user_id'] ?? 0);
+        $adminUnreadMessages = (int)$pdo->query("SELECT COUNT(DISTINCT client_id) FROM general_messages WHERE read_by_admin=0 AND user_id<>{$adminId}")->fetchColumn();
+    } catch (PDOException $e) {}
+}
+
 $sidebarGroupsAdmin = [
     'Principal' => [
         ['url' => 'admin_dashboard.php', 'label' => 'Vista 360', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'],
@@ -15,6 +46,8 @@ $sidebarGroupsAdmin = [
         ['url' => 'admin_approvals.php', 'label' => 'Aprobaciones', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>', 'badge' => signupPendingCount()],
         ['url' => 'admin_requests.php', 'label' => 'Solicitudes', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>'],
         ['url' => 'admin_finances.php', 'label' => 'Finanzas', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'],
+        ['url' => 'admin_messages.php', 'label' => 'Mensajes', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>', 'badge' => $adminUnreadMessages],
+        ['url' => 'admin_documents.php', 'label' => 'Documentos compartidos', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>'],
     ],
     'Fiscal DGII' => [
         ['url' => 'admin_tax_calendar.php', 'label' => 'Calendario fiscal', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 16l2 2 4-4"/></svg>'],
@@ -34,10 +67,18 @@ $sidebarGroupsAdmin = [
 
 $sidebarGroupsClient = [
     'Principal' => [
-        ['url' => 'client_dashboard.php', 'label' => 'Mi Panel', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'],
-        ['url' => 'client_uploads.php', 'label' => 'Subir facturas (IA)', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>'],
-        ['url' => 'client_calendar.php', 'label' => 'Mi calendario fiscal', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 16l2 2 4-4"/></svg>'],
-        ['url' => 'client_profile.php', 'label' => 'Mi perfil', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'],
+        ['url' => 'client_dashboard.php',  'label' => 'Mi Panel',            'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>'],
+        ['url' => 'client_messages.php',   'label' => 'Mensajes',            'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>', 'badge' => $clientUnreadMessages],
+        ['url' => 'client_requests.php',   'label' => 'Mis tramites',        'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>', 'badge' => $clientActiveRequests],
+        ['url' => 'client_uploads.php',    'label' => 'Subir facturas (IA)', 'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>'],
+        ['url' => 'client_calendar.php',   'label' => 'Mi calendario',       'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 16l2 2 4-4"/></svg>'],
+    ],
+    'Documentos' => [
+        ['url' => 'client_documents.php',  'label' => 'Mis documentos',      'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>', 'badge' => $clientNewDocs],
+        ['url' => 'client_invoices.php',   'label' => 'Mis volantes',        'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>', 'badge' => $clientPendingInvoices],
+    ],
+    'Cuenta' => [
+        ['url' => 'client_profile.php',    'label' => 'Mi perfil',           'icon' => '<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'],
     ],
 ];
 
@@ -88,10 +129,16 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
             'admin_users.php'           => 'nav-users',
             'admin_roles.php'           => 'nav-roles',
             'admin_settings.php'        => 'nav-settings',
+            'admin_messages.php'        => 'nav-messages',
+            'admin_documents.php'       => 'nav-documents',
             'client_dashboard.php'      => 'nav-dashboard',
             'client_uploads.php'        => 'nav-uploads',
             'client_calendar.php'       => 'nav-calendar',
             'client_profile.php'        => 'nav-profile',
+            'client_messages.php'       => 'nav-messages',
+            'client_requests.php'       => 'nav-requests',
+            'client_documents.php'      => 'nav-documents',
+            'client_invoices.php'       => 'nav-invoices',
         ];
         ?>
         <?php foreach ($groups as $groupName => $items): ?>
