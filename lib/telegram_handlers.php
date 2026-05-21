@@ -12,10 +12,9 @@ function tgRespondError($chatId, $msg) {
 function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $caption = '') {
     global $pdo;
 
-    // ========= ACK INMEDIATO ANTES DE TODO =========
-    // Enviamos "Recibida..." en cuanto entramos al handler para que el cliente
-    // siempre vea respuesta sub-segundo, sin esperar al rate-limit / download / IA.
-    $ack = tgSendMessage($chatId, "Recibida. Procesando con IA...");
+    // ========= INDICADOR "typing" + ACK INMEDIATO =========
+    @tgSendChatAction($chatId, 'typing');
+    $ack = tgSendMessage($chatId, "📄 Recibida. Procesando con IA...");
     $ackMessageId = (int)($ack['result']['message_id'] ?? 0);
 
     // Rate limit: max 30 facturas/hora por chat
@@ -66,11 +65,14 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
             'png'        => 'image/png',
             'webp'       => 'image/webp',
             'heic','heif'=> 'image/heic',
+            'pdf'        => 'application/pdf',
             default      => 'image/jpeg',
         };
     }
-    if (strpos($mime, 'image/') !== 0) {
-        $msg = "Solo puedo procesar imagenes (JPG, PNG, WEBP, HEIC). Recibi <code>" . htmlspecialchars($mime) . "</code>.";
+    $isImage = strpos($mime, 'image/') === 0;
+    $isPdf   = $mime === 'application/pdf';
+    if (!$isImage && !$isPdf) {
+        $msg = "Solo proceso fotos (JPG, PNG, WEBP, HEIC) o PDF. Recibi <code>" . htmlspecialchars($mime) . "</code>.\nReenvialo como foto o exportalo a PDF.";
         if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
         return;
     }
@@ -124,11 +126,14 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
         );
     }
 
+    // Refrescar typing antes de la IA (caduca a los 5s)
+    @tgSendChatAction($chatId, 'typing');
+
     // Procesamiento inline (default): el polling loop espera al resultado de IA
     // pero el ack ya fue enviado, asi que el cliente no nota la diferencia.
     $res = aiProcessUpload($uploadId);
     if (!$res['ok']) {
-        $errMsg = "La IA fallo:\n<i>" . htmlspecialchars($res['error']) . "</i>\nEl asesor la procesara manualmente.";
+        $errMsg = "⚠️ La IA tuvo un problema:\n<i>" . htmlspecialchars($res['error']) . "</i>\n\nNo te preocupes — tu asesor la procesara manualmente.";
         if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $errMsg);
         else tgSendMessage($chatId, $errMsg);
         return;
@@ -138,19 +143,43 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     $e = $exQ->fetch();
     if ($e) {
         $conf = round(((float)$e['confidence']) * 100);
+        // Emoji por confianza
+        $confEmoji = $conf >= 90 ? '✅' : ($conf >= 70 ? '⚠️' : '❓');
+        $docEmoji  = $e['doc_type'] === 'venta' ? '📤' : '📥';
         $msg = implode("\n", [
-            "<b>Factura procesada</b>",
-            ($e['doc_type'] === 'venta' ? "Venta (607)" : "Compra (606)") . " - Periodo " . htmlspecialchars($e['period'] ?? '-'),
-            "Contraparte: <i>" . htmlspecialchars($e['counterparty_name'] ?: '-') . "</i>",
-            "NCF: <code>" . htmlspecialchars($e['ncf'] ?: '-') . "</code>",
-            "Total: <b>RD$ " . number_format((float)$e['total'], 2) . "</b>",
-            "ITBIS: RD$ " . number_format((float)$e['itbis'], 2),
-            "Confianza IA: {$conf}%",
+            "<b>Factura procesada</b> {$confEmoji}",
             "",
-            "Tu asesor la validara para incluirla en el formulario.",
+            $docEmoji . " " . ($e['doc_type'] === 'venta' ? "Venta (formulario 607)" : "Compra (formulario 606)"),
+            "📅 Periodo: " . htmlspecialchars($e['period'] ?? '-'),
+            "🏢 Contraparte: <i>" . htmlspecialchars($e['counterparty_name'] ?: 'No leida'). "</i>",
+            "🔢 NCF: <code>" . htmlspecialchars($e['ncf'] ?: 'No leido') . "</code>",
+            "💵 Total: <b>RD$ " . number_format((float)$e['total'], 2) . "</b>",
+            "📊 ITBIS: RD$ " . number_format((float)$e['itbis'], 2),
+            "🤖 Confianza IA: <b>{$conf}%</b>",
+            "",
+            ($conf >= 90
+                ? "Lista para que tu asesor la valide."
+                : ($conf >= 70
+                    ? "Tu asesor revisara los campos dudosos."
+                    : "Foto con baja calidad. Tu asesor la revisara con cuidado.")),
         ]);
-        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
-        else tgSendMessage($chatId, $msg);
+
+        // Botones de accion rapida
+        $buttons = [
+            [
+                ['text' => '📊 Mi estado', 'cb' => 'cmd:estado'],
+                ['text' => '📅 Vencimientos', 'cb' => 'cmd:vencimientos'],
+            ],
+            [
+                ['text' => '🔁 Subir otra', 'cb' => 'cmd:subir_otra'],
+            ],
+        ];
+
+        if ($ackMessageId) {
+            tgEditMessageWithKeyboard($chatId, $ackMessageId, $msg, $buttons);
+        } else {
+            tgSendMessageWithKeyboard($chatId, $msg, $buttons);
+        }
         return;
     }
     $fallback = "Factura recibida. Tu asesor la procesara con IA en breve.";
@@ -231,10 +260,14 @@ function tgHandleMessage(array $msg) {
                     tgLinkClient((int)$found['id'], $chatId, $from);
                     tgSetState($chatId, 'idle');
                     $label = $found['business_name'] ?: $found['name'];
-                    tgSendMessage($chatId, "Cuenta vinculada con <b>" . htmlspecialchars($label) . "</b>.\n\nAhora envia fotos de tus facturas. Tambien puedes escribir /estado o /ayuda.");
+                    $buttons = [
+                        [['text' => '📊 Mi estado', 'cb' => 'cmd:estado']],
+                        [['text' => '📅 Vencimientos', 'cb' => 'cmd:vencimientos'], ['text' => '❓ Ayuda', 'cb' => 'cmd:ayuda']],
+                    ];
+                    tgSendMessageWithKeyboard($chatId, tgWelcomeAfterLink($company, $label), $buttons);
                     return;
                 }
-                tgSendMessage($chatId, "Codigo invalido. Pide tu codigo de vinculacion al equipo o copia el que aparece en tu portal.");
+                tgSendMessage($chatId, "❌ Codigo invalido. Pide tu codigo de vinculacion al equipo o copialo desde tu portal en <b>Mi perfil</b>.");
                 return;
             }
             tgSendMessage($chatId, tgWelcomeText(htmlspecialchars($company)));
@@ -259,7 +292,11 @@ function tgHandleMessage(array $msg) {
             tgLinkClient((int)$found['id'], $chatId, $from);
             tgSetState($chatId, 'idle');
             $label = $found['business_name'] ?: $found['name'];
-            tgSendMessage($chatId, "Listo. Cuenta vinculada con <b>" . htmlspecialchars($label) . "</b>.\n\nEnviame fotos de tus facturas y yo me encargo. Si necesitas ayuda escribe /ayuda.");
+            $buttons = [
+                [['text' => '📊 Mi estado', 'cb' => 'cmd:estado']],
+                [['text' => '📅 Vencimientos', 'cb' => 'cmd:vencimientos'], ['text' => '❓ Ayuda', 'cb' => 'cmd:ayuda']],
+            ];
+            tgSendMessageWithKeyboard($chatId, tgWelcomeAfterLink($company, $label), $buttons);
             return;
         }
         if (preg_match('/^\/(salir|unlink|desvincular)(?:@\w+)?/i', $text)) {
@@ -330,6 +367,127 @@ function tgHandleMessage(array $msg) {
             ]));
             return;
         }
+        if (preg_match('/^\/historial(?:@\w+)?(?:\s+(\d+))?/i', $text, $m)) {
+            if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
+            $limit = !empty($m[1]) ? min(20, max(1, (int)$m[1])) : 5;
+            $q = $pdo->prepare("
+                SELECT u.id, u.status, u.created_at,
+                       e.doc_type, e.total, e.ncf, e.counterparty_name, e.confidence
+                FROM invoice_uploads u
+                LEFT JOIN invoice_extractions e ON e.upload_id = u.id
+                WHERE u.client_id = ?
+                ORDER BY u.created_at DESC
+                LIMIT {$limit}
+            ");
+            $q->execute([$client['client_id']]);
+            $rows = $q->fetchAll();
+            if (empty($rows)) {
+                tgSendMessage($chatId, "Aun no has subido facturas. Envia una foto cuando quieras.");
+                return;
+            }
+            $lines = ["<b>Tus ultimas {$limit} facturas</b>", ""];
+            foreach ($rows as $r) {
+                $emoji = match ($r['status']) {
+                    'approved'  => '✅',
+                    'extracted' => '⏳',
+                    'error'     => '❌',
+                    'rejected'  => '🚫',
+                    default     => '📄',
+                };
+                $when = date('d/m H:i', strtotime($r['created_at']));
+                $total = $r['total'] ? 'RD$ ' . number_format((float)$r['total'], 2) : '—';
+                $cp = mb_substr($r['counterparty_name'] ?: '(sin contraparte)', 0, 28);
+                $lines[] = "{$emoji} <code>#{$r['id']}</code> · {$when} · " . htmlspecialchars($cp) . " · <b>{$total}</b>";
+            }
+            $lines[] = "";
+            $lines[] = "<i>Escribe /factura ID para ver detalles de una.</i>";
+            tgSendMessage($chatId, implode("\n", $lines));
+            return;
+        }
+        if (preg_match('/^\/factura(?:@\w+)?\s+(\d+)/i', $text, $m)) {
+            if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
+            $id = (int)$m[1];
+            $q = $pdo->prepare("
+                SELECT u.id, u.status, u.created_at, u.source, u.error_message,
+                       e.doc_type, e.period, e.date_doc, e.rnc, e.ncf, e.ncf_type, e.counterparty_name,
+                       e.subtotal, e.itbis, e.total, e.confidence, e.concept
+                FROM invoice_uploads u
+                LEFT JOIN invoice_extractions e ON e.upload_id = u.id
+                WHERE u.id = ? AND u.client_id = ?
+            ");
+            $q->execute([$id, $client['client_id']]);
+            $r = $q->fetch();
+            if (!$r) {
+                tgSendMessage($chatId, "No encuentro la factura #{$id}. Usa /historial para ver tus facturas.");
+                return;
+            }
+            $statusEmoji = match ($r['status']) {
+                'approved'  => '✅ Aprobada',
+                'extracted' => '⏳ Por aprobar',
+                'error'     => '❌ Error',
+                'rejected'  => '🚫 Rechazada',
+                'processing'=> '🔄 Procesando',
+                'uploaded'  => '📤 Subida',
+                default     => $r['status'],
+            };
+            $lines = [
+                "<b>Factura #{$r['id']}</b>",
+                "Estado: {$statusEmoji}",
+                "Subida: " . date('d/m/Y H:i', strtotime($r['created_at'])),
+                "",
+            ];
+            if ($r['doc_type']) {
+                $conf = round(((float)$r['confidence']) * 100);
+                $lines[] = ($r['doc_type'] === 'venta' ? '📤 Venta (607)' : '📥 Compra (606)') . ' · Periodo ' . htmlspecialchars($r['period'] ?? '-');
+                if ($r['date_doc']) $lines[] = "📅 Fecha factura: " . date('d/m/Y', strtotime($r['date_doc']));
+                $lines[] = "🏢 " . htmlspecialchars($r['counterparty_name'] ?: '-');
+                $lines[] = "🔢 NCF: <code>" . htmlspecialchars($r['ncf'] ?: '-') . "</code>";
+                if ($r['concept']) $lines[] = "📝 " . htmlspecialchars(mb_substr($r['concept'], 0, 80));
+                $lines[] = "";
+                $lines[] = "Subtotal: RD$ " . number_format((float)$r['subtotal'], 2);
+                $lines[] = "ITBIS: RD$ " . number_format((float)$r['itbis'], 2);
+                $lines[] = "<b>Total: RD$ " . number_format((float)$r['total'], 2) . "</b>";
+                $lines[] = "🤖 Confianza IA: {$conf}%";
+            } elseif ($r['error_message']) {
+                $lines[] = "<i>Error: " . htmlspecialchars(mb_substr($r['error_message'], 0, 200)) . "</i>";
+            } else {
+                $lines[] = "<i>Aun no procesada por la IA.</i>";
+            }
+            tgSendMessage($chatId, implode("\n", $lines));
+            return;
+        }
+        if (preg_match('/^\/diag(?:nostico)?(?:@\w+)?/i', $text)) {
+            if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado."); return; }
+            // Diagnostico publico (no expone secrets): contadores de su cuenta
+            $c = $pdo->prepare("
+                SELECT
+                  (SELECT COUNT(*) FROM invoice_uploads WHERE client_id=?) AS total_uploads,
+                  (SELECT COUNT(*) FROM invoice_uploads WHERE client_id=? AND status='approved') AS approved,
+                  (SELECT COUNT(*) FROM invoice_uploads WHERE client_id=? AND status='extracted') AS pending,
+                  (SELECT COUNT(*) FROM invoice_uploads WHERE client_id=? AND status='error') AS errors,
+                  (SELECT MAX(created_at) FROM invoice_uploads WHERE client_id=?) AS last_upload
+            ");
+            $c->execute(array_fill(0, 5, $client['client_id']));
+            $d = $c->fetch();
+            $last = $d['last_upload'] ? date('d/m/Y H:i', strtotime($d['last_upload'])) : 'nunca';
+            tgSendMessage($chatId, implode("\n", [
+                "<b>Diagnostico</b>",
+                "",
+                "✅ Vinculado como: <b>" . htmlspecialchars($client['business_name'] ?: $client['name']) . "</b>",
+                "📤 Facturas totales: " . (int)$d['total_uploads'],
+                "✅ Aprobadas: " . (int)$d['approved'],
+                "⏳ Por revisar: " . (int)$d['pending'],
+                "❌ Con error: " . (int)$d['errors'],
+                "🕒 Ultima subida: {$last}",
+                "",
+                "Bot OK · Servidor activo",
+            ]));
+            return;
+        }
+        if (preg_match('/^\/(comandos|menu)(?:@\w+)?/i', $text)) {
+            tgSendMessage($chatId, tgHelpText());
+            return;
+        }
         if (preg_match('/^\/(estado|status)(?:@\w+)?/i', $text)) {
             if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
             $period = date('Y-m');
@@ -347,19 +505,31 @@ function tgHandleMessage(array $msg) {
             $st->execute([$client['client_id'], $period, $period]);
             $s = $st->fetch();
             $itbisBalance = (float)$s['itbis_ventas'] - (float)$s['itbis_compras'];
-            tgSendMessage($chatId, implode("\n", [
-                "<b>Resumen " . formatPeriod($period) . "</b>",
-                "Facturas subidas: <b>" . (int)$s['total'] . "</b>",
-                "Por revisar: " . (int)$s['pending'],
-                "Aprobadas: " . (int)$s['approved'],
-                "ITBIS pagado (606): RD$ " . number_format((float)$s['itbis_compras'], 2),
-                "ITBIS cobrado (607): RD$ " . number_format((float)$s['itbis_ventas'], 2),
-                "IT-1 estimado: <b>RD$ " . number_format($itbisBalance, 2) . "</b>" . ($itbisBalance > 0 ? ' a pagar' : ' a favor'),
-            ]));
+            $balanceEmoji = $itbisBalance > 0 ? '🔴' : '🟢';
+            $msg = implode("\n", [
+                "<b>📊 Resumen " . formatPeriod($period) . "</b>",
+                "",
+                "📤 Facturas subidas: <b>" . (int)$s['total'] . "</b>",
+                "⏳ Por revisar: " . (int)$s['pending'],
+                "✅ Aprobadas: " . (int)$s['approved'],
+                "",
+                "💰 ITBIS pagado (606): RD$ " . number_format((float)$s['itbis_compras'], 2),
+                "💵 ITBIS cobrado (607): RD$ " . number_format((float)$s['itbis_ventas'], 2),
+                "",
+                $balanceEmoji . " IT-1 estimado: <b>RD$ " . number_format(abs($itbisBalance), 2) . "</b>" . ($itbisBalance > 0 ? ' a pagar' : ' a favor'),
+            ]);
+            $buttons = [
+                [['text' => '📅 Vencimientos', 'cb' => 'cmd:vencimientos'], ['text' => '📋 Historial', 'cb' => 'cmd:historial']],
+            ];
+            tgSendMessageWithKeyboard($chatId, $msg, $buttons);
             return;
         }
         if (preg_match('/^\//', $text)) {
-            tgSendMessage($chatId, "Comando no reconocido. Escribe /ayuda para ver opciones.");
+            $buttons = [
+                [['text' => '📊 Estado', 'cb' => 'cmd:estado'], ['text' => '📅 Vencimientos', 'cb' => 'cmd:vencimientos']],
+                [['text' => '📋 Historial', 'cb' => 'cmd:historial'], ['text' => '❓ Ayuda', 'cb' => 'cmd:ayuda']],
+            ];
+            tgSendMessageWithKeyboard($chatId, "🤔 Comando no reconocido. Aqui van las opciones rapidas:", $buttons);
             return;
         }
     }
@@ -389,7 +559,55 @@ function tgProcessUpdate(array $update) {
     } elseif (isset($update['edited_message'])) {
         tgHandleMessage($update['edited_message']);
     } elseif (isset($update['callback_query'])) {
-        $cb = $update['callback_query'];
-        tgAnswerCallback($cb['id'] ?? '');
+        tgHandleCallback($update['callback_query']);
     }
+}
+
+/**
+ * Maneja clics en botones inline. El callback_data tiene formato 'cmd:xxx'.
+ */
+function tgHandleCallback(array $cb) {
+    global $pdo;
+    $cbId   = $cb['id'] ?? '';
+    $data   = (string)($cb['data'] ?? '');
+    $msg    = $cb['message'] ?? [];
+    $chatId = (int)($msg['chat']['id'] ?? 0);
+
+    // Confirmar callback de inmediato para que el spinner desaparezca
+    tgAnswerCallback($cbId);
+
+    if ($chatId === 0 || $data === '') return;
+
+    $client = tgClientForChat($chatId);
+    if (!$client) {
+        tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO.");
+        return;
+    }
+
+    if ($data === 'cmd:estado') {
+        tgRunCommand('estado', $chatId, $client);
+    } elseif ($data === 'cmd:vencimientos') {
+        tgRunCommand('vencimientos', $chatId, $client);
+    } elseif ($data === 'cmd:saldo') {
+        tgRunCommand('saldo', $chatId, $client);
+    } elseif ($data === 'cmd:subir_otra') {
+        tgSendMessage($chatId, "📷 Listo, envia la siguiente foto cuando quieras.");
+    } elseif ($data === 'cmd:historial') {
+        tgRunCommand('historial', $chatId, $client);
+    } elseif ($data === 'cmd:ayuda') {
+        tgSendMessage($chatId, tgHelpText());
+    }
+}
+
+/**
+ * Ejecuta un comando como si el usuario lo hubiera escrito.
+ * Usado tanto desde texto como desde callbacks de teclado.
+ */
+function tgRunCommand(string $cmd, int $chatId, array $client) {
+    $synthetic = [
+        'chat'    => ['id' => $chatId],
+        'from'    => ['id' => $chatId],
+        'text'    => '/' . $cmd,
+    ];
+    tgHandleMessage($synthetic);
 }

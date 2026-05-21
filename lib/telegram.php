@@ -53,6 +53,66 @@ function tgSendMessage($chatId, $text, $opts = []) {
     return tgApi('sendMessage', $params);
 }
 
+/**
+ * Envia un mensaje con teclado inline.
+ * $buttons es array de filas; cada fila es array de [text => callback_data] o [text => url].
+ */
+function tgSendMessageWithKeyboard($chatId, $text, $buttons, $opts = []) {
+    $keyboard = ['inline_keyboard' => []];
+    foreach ($buttons as $row) {
+        $kbRow = [];
+        foreach ($row as $btn) {
+            if (isset($btn['url'])) {
+                $kbRow[] = ['text' => $btn['text'], 'url' => $btn['url']];
+            } else {
+                $kbRow[] = ['text' => $btn['text'], 'callback_data' => $btn['cb'] ?? $btn['text']];
+            }
+        }
+        $keyboard['inline_keyboard'][] = $kbRow;
+    }
+    return tgSendMessage($chatId, $text, array_merge(['reply_markup' => json_encode($keyboard)], $opts));
+}
+
+/**
+ * Edita un mensaje agregandole/cambiandole el teclado inline.
+ */
+function tgEditMessageWithKeyboard($chatId, $messageId, $text, $buttons = null) {
+    $params = [
+        'chat_id'    => $chatId,
+        'message_id' => $messageId,
+        'text'       => $text,
+        'parse_mode' => 'HTML',
+        'disable_web_page_preview' => true,
+    ];
+    if ($buttons !== null) {
+        $keyboard = ['inline_keyboard' => []];
+        foreach ($buttons as $row) {
+            $kbRow = [];
+            foreach ($row as $btn) {
+                if (isset($btn['url'])) {
+                    $kbRow[] = ['text' => $btn['text'], 'url' => $btn['url']];
+                } else {
+                    $kbRow[] = ['text' => $btn['text'], 'callback_data' => $btn['cb'] ?? $btn['text']];
+                }
+            }
+            $keyboard['inline_keyboard'][] = $kbRow;
+        }
+        $params['reply_markup'] = json_encode($keyboard);
+    }
+    return tgApi('editMessageText', $params);
+}
+
+/**
+ * Envia chat action ("typing", "upload_photo", etc) para que el cliente vea actividad.
+ * Caduca a los 5s, hay que repetirlo si la operacion dura mas.
+ */
+function tgSendChatAction($chatId, $action = 'typing') {
+    return tgApi('sendChatAction', [
+        'chat_id' => $chatId,
+        'action'  => $action,
+    ]);
+}
+
 function tgAnswerCallback($callbackId, $text = '', $alert = false) {
     return tgApi('answerCallbackQuery', [
         'callback_query_id' => $callbackId,
@@ -84,11 +144,17 @@ function tgDownloadFile($filePath, $destination) {
     $ch  = curl_init($url);
     curl_setopt($ch, CURLOPT_FILE, $fp);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 90);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
     $ok = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     fclose($fp);
-    return $ok && filesize($destination) > 0;
+    if (!$ok || $http >= 400) {
+        @unlink($destination);
+        return false;
+    }
+    return filesize($destination) > 0;
 }
 
 function tgSetWebhook($url, $secret = '') {
@@ -220,39 +286,54 @@ function tgUnlink($chatId) {
 // --------------------------------------------------------------------------
 function tgWelcomeText($companyName) {
     return implode("\n", [
-        "<b>Bienvenido a {$companyName}</b>",
+        "👋 <b>Bienvenido a {$companyName}</b>",
         "",
         "Soy el asistente que recibe tus facturas y las procesa con IA para tu 606, 607 e IT-1.",
         "",
-        "<b>Como vincular tu cuenta</b>",
-        "1. Entra a tu portal y abre el panel principal.",
-        "2. Copia tu <i>codigo de vinculacion</i> de 8 caracteres.",
+        "🔗 <b>Como vincular tu cuenta</b>",
+        "1. Entra a tu portal y abre <b>Mi perfil</b>.",
+        "2. Copia el <i>codigo de vinculacion</i> de 8 caracteres.",
         "3. Aqui escribe: <code>/vincular CODIGO</code>",
         "",
-        "Cuando estes vinculado, simplemente envia <b>fotos de tus facturas</b> y yo me encargo del resto.",
+        "Cuando estes vinculado:",
+        "📷 Envia <b>fotos</b> de tus facturas (o PDF) y la IA lee RNC, NCF, ITBIS y total.",
+        "💬 Puedes agregar un texto al enviar la foto y se guarda como nota.",
+        "📤 Tambien funciona si reenvias varias facturas a la vez.",
         "",
-        "<b>Comandos disponibles</b>",
-        "/vincular CODIGO  - vincula tu cuenta",
-        "/estado  - resumen general del periodo",
-        "/saldo  - tu IT-1 (ITBIS a pagar)",
-        "/vencimientos  - proximas obligaciones DGII",
-        "/ayuda  - ver esta lista",
-        "/salir  - desvincular este chat",
+        "📌 Escribe /ayuda para ver todos los comandos.",
     ]);
 }
 
 function tgHelpText() {
     return implode("\n", [
-        "<b>Como funciona el flujo</b>",
-        "1. Envia una foto a este chat (puedes enviar varias).",
-        "2. La IA lee RNC, NCF, monto, ITBIS y categoria automaticamente.",
-        "3. Tu asesor valida y la registra en 606/607.",
+        "📚 <b>Comandos del bot</b>",
         "",
-        "<b>Comandos</b>",
-        "/estado  - resumen del mes (facturas + ITBIS)",
-        "/saldo [YYYY-MM]  - IT-1 ITBIS del periodo",
-        "/vencimientos  - calendario DGII",
-        "/salir  - desvincula este chat",
-        "/ayuda  - este mensaje",
+        "📷 <b>Envia foto o PDF</b> de tu factura → la IA hace todo.",
+        "Tip: puedes agregar texto (caption) y se guarda como nota.",
+        "",
+        "📊 /estado — resumen del mes (facturas + ITBIS)",
+        "💰 /saldo [YYYY-MM] — IT-1 ITBIS del periodo",
+        "📅 /vencimientos — calendario DGII",
+        "📋 /historial [N] — tus ultimas facturas (default 5)",
+        "🔎 /factura ID — detalle de una factura especifica",
+        "🩺 /diag — diagnostico de tu cuenta",
+        "🔗 /vincular CODIGO — conectar tu cuenta",
+        "👋 /salir — desvincular este chat",
+        "❓ /ayuda — este mensaje",
+    ]);
+}
+
+function tgWelcomeAfterLink($companyName, $label) {
+    return implode("\n", [
+        "✅ <b>Listo!</b> Cuenta vinculada con <b>" . htmlspecialchars($label) . "</b>.",
+        "",
+        "Ya puedes enviarme <b>fotos de tus facturas</b> y la IA las procesa al instante.",
+        "",
+        "💡 <b>Tips rapidos:</b>",
+        "• Busca buena iluminacion al fotografiar.",
+        "• Puedes mandar PDF tambien.",
+        "• Agregar un texto en la foto se guarda como nota.",
+        "• Usa /estado para ver tu resumen del mes.",
+        "• Usa /vencimientos para ver cuando vencen tus formularios DGII.",
     ]);
 }
