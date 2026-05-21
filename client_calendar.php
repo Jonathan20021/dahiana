@@ -25,15 +25,14 @@ $nextYm = date('Y-m', mktime(0, 0, 0, $month + 1, 1, $year));
 $dateStart = sprintf('%04d-%02d-01', $year, $month);
 $dateEnd   = date('Y-m-d', mktime(0, 0, 0, $month + 1, 0, $year));
 
-// Asegurar obligaciones generadas
-generateObligationsForClient($clientId, 3);
-
+// El cliente NO genera obligaciones; solo lee las que la consultora ha activado/aprobado.
 // Obligaciones del mes
 $obStmt = $pdo->prepare("
     SELECT obligation_type, period, due_date, status
     FROM tax_obligations
     WHERE client_id = ?
       AND due_date BETWEEN ? AND ?
+      AND dismissed_at IS NULL
     ORDER BY due_date ASC
 ");
 $obStmt->execute([$clientId, $dateStart, $dateEnd]);

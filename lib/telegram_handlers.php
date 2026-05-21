@@ -87,38 +87,90 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     $ackMessageId = (int)($ack['result']['message_id'] ?? 0);
 
     $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
-    if ($autoProcess) {
-        $res = aiProcessUpload($uploadId);
-        if (!$res['ok']) {
-            $errMsg = "La IA fallo:\n<i>" . htmlspecialchars($res['error']) . "</i>\nEl asesor la procesara manualmente.";
-            if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $errMsg);
-            else tgSendMessage($chatId, $errMsg);
-            return;
-        }
-        $exQ = $pdo->prepare("SELECT doc_type, total, itbis, ncf, counterparty_name, confidence, period FROM invoice_extractions WHERE upload_id=? ORDER BY id DESC LIMIT 1");
-        $exQ->execute([$uploadId]);
-        $e = $exQ->fetch();
-        if ($e) {
-            $conf = round(((float)$e['confidence']) * 100);
-            $msg = implode("\n", [
-                "<b>Factura procesada</b>",
-                ($e['doc_type'] === 'venta' ? "Venta (607)" : "Compra (606)") . " - Periodo " . htmlspecialchars($e['period'] ?? '-'),
-                "Contraparte: <i>" . htmlspecialchars($e['counterparty_name'] ?: '-') . "</i>",
-                "NCF: <code>" . htmlspecialchars($e['ncf'] ?: '-') . "</code>",
-                "Total: <b>RD$ " . number_format((float)$e['total'], 2) . "</b>",
-                "ITBIS: RD$ " . number_format((float)$e['itbis'], 2),
-                "Confianza IA: {$conf}%",
-                "",
-                "Tu asesor la validara para incluirla en el formulario.",
-            ]);
-            if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
-            else tgSendMessage($chatId, $msg);
-            return;
-        }
+    if (!$autoProcess) {
+        $fallback = "Factura recibida. Tu asesor la procesara con IA en breve.";
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $fallback);
+        else tgSendMessage($chatId, $fallback);
+        return;
+    }
+
+    // Intentar despachar a worker en background para no bloquear el polling loop.
+    // Asi el bot puede atender otras fotos mientras esta procesa.
+    $spawned = tgSpawnAiWorker($uploadId, $chatId, $ackMessageId);
+    if ($spawned) return;
+
+    // Fallback: si no se pudo spawn (exec deshabilitado, etc.), procesar inline.
+    $res = aiProcessUpload($uploadId);
+    if (!$res['ok']) {
+        $errMsg = "La IA fallo:\n<i>" . htmlspecialchars($res['error']) . "</i>\nEl asesor la procesara manualmente.";
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $errMsg);
+        else tgSendMessage($chatId, $errMsg);
+        return;
+    }
+    $exQ = $pdo->prepare("SELECT doc_type, total, itbis, ncf, counterparty_name, confidence, period FROM invoice_extractions WHERE upload_id=? ORDER BY id DESC LIMIT 1");
+    $exQ->execute([$uploadId]);
+    $e = $exQ->fetch();
+    if ($e) {
+        $conf = round(((float)$e['confidence']) * 100);
+        $msg = implode("\n", [
+            "<b>Factura procesada</b>",
+            ($e['doc_type'] === 'venta' ? "Venta (607)" : "Compra (606)") . " - Periodo " . htmlspecialchars($e['period'] ?? '-'),
+            "Contraparte: <i>" . htmlspecialchars($e['counterparty_name'] ?: '-') . "</i>",
+            "NCF: <code>" . htmlspecialchars($e['ncf'] ?: '-') . "</code>",
+            "Total: <b>RD$ " . number_format((float)$e['total'], 2) . "</b>",
+            "ITBIS: RD$ " . number_format((float)$e['itbis'], 2),
+            "Confianza IA: {$conf}%",
+            "",
+            "Tu asesor la validara para incluirla en el formulario.",
+        ]);
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
+        else tgSendMessage($chatId, $msg);
+        return;
     }
     $fallback = "Factura recibida. Tu asesor la procesara con IA en breve.";
     if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $fallback);
     else tgSendMessage($chatId, $fallback);
+}
+
+/**
+ * Lanza ai_telegram_worker.php en background. Devuelve true si pudo spawn.
+ * Si la funcion exec/proc_open esta deshabilitada o el binario php no se halla,
+ * devuelve false y el caller hace fallback a procesamiento sync.
+ */
+function tgSpawnAiWorker(int $uploadId, int $chatId, int $ackMessageId): bool {
+    // Si el host deshabilito exec/proc_open, no hay forma de fork-detach
+    $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+    if (in_array('exec', $disabled, true) || !function_exists('exec')) {
+        return false;
+    }
+    if (in_array('proc_open', $disabled, true) || !function_exists('proc_open')) {
+        // exec con & funciona en linux sin proc_open
+    }
+
+    // Detectar binario PHP: PHP_BINARY es el binario CLI corriendo.
+    $phpBin = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+    $worker = __DIR__ . '/../ai_telegram_worker.php';
+    if (!is_file($worker)) return false;
+
+    $isWin = stripos(PHP_OS, 'WIN') === 0;
+    if ($isWin) {
+        // Windows: lanzar con start /B (background sin ventana)
+        $cmd = sprintf('start /B "" %s %s %d %d %d',
+            escapeshellarg($phpBin),
+            escapeshellarg($worker),
+            $uploadId, $chatId, $ackMessageId);
+        @pclose(@popen($cmd, 'r'));
+        return true;
+    }
+
+    // Linux/macOS: ejecutar en background con nohup y redirect a /dev/null.
+    // El & al final desconecta el proceso del shell padre.
+    $cmd = sprintf('nohup %s %s %d %d %d > /dev/null 2>&1 & echo $!',
+        escapeshellarg($phpBin),
+        escapeshellarg($worker),
+        $uploadId, $chatId, $ackMessageId);
+    $pid = @exec($cmd);
+    return $pid !== false && $pid !== '';
 }
 
 function tgHandleMessage(array $msg) {
@@ -180,20 +232,27 @@ function tgHandleMessage(array $msg) {
         }
         if (preg_match('/^\/(vencimientos|agenda)(?:@\w+)?/i', $text)) {
             if (!$client) { tgSendMessage($chatId, "Aun no estas vinculado. Usa /vincular CODIGO."); return; }
-            if (function_exists('generateObligationsForClient')) {
-                generateObligationsForClient((int)$client['client_id'], 3);
-            }
+            // Solo lectura: la consultora controla que obligaciones aplican al cliente.
             $obl = $pdo->prepare("
                 SELECT obligation_type, period, due_date, status
                 FROM tax_obligations
-                WHERE client_id = ? AND status IN ('pendiente','vencido')
+                WHERE client_id = ? AND status IN ('pendiente','vencido') AND dismissed_at IS NULL
                 ORDER BY due_date ASC
                 LIMIT 8
             ");
             $obl->execute([$client['client_id']]);
             $rows = $obl->fetchAll();
             if (empty($rows)) {
-                tgSendMessage($chatId, "Estas al dia. No tienes vencimientos cercanos.");
+                // Distinguir entre "al dia" y "el asesor no ha activado nada"
+                $subs = function_exists('getClientObligationSubscriptions')
+                    ? getClientObligationSubscriptions((int)$client['client_id'], false)
+                    : [];
+                $enabledCount = count(array_filter($subs));
+                if ($enabledCount === 0) {
+                    tgSendMessage($chatId, "Aun no hay obligaciones DGII configuradas para tu cuenta. Tu asesor las gestiona segun la iguala acordada.");
+                } else {
+                    tgSendMessage($chatId, "Estas al dia. No tienes vencimientos cercanos en tus " . $enabledCount . " obligacion(es) activas.");
+                }
                 return;
             }
             $lines = ["<b>Proximos vencimientos DGII</b>", ""];

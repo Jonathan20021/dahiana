@@ -49,7 +49,7 @@ if ($isAdmin) {
 
     // 3. Obligaciones vencidas
     try {
-        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status = 'vencido'");
+        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status = 'vencido' AND dismissed_at IS NULL");
         $overdue = (int)$stmt->fetchColumn();
         if ($overdue > 0) {
             $items[] = [
@@ -65,7 +65,7 @@ if ($isAdmin) {
 
     // 4. Obligaciones que vencen esta semana
     try {
-        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status='pendiente' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status='pendiente' AND dismissed_at IS NULL AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
         $week = (int)$stmt->fetchColumn();
         if ($week > 0) {
             $items[] = [
@@ -112,7 +112,7 @@ if ($isAdmin) {
     // === Cliente ===
     // 1. Sus obligaciones vencidas
     try {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tax_obligations WHERE client_id=? AND status = 'vencido'");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tax_obligations WHERE client_id=? AND status = 'vencido' AND dismissed_at IS NULL");
         $stmt->execute([$userId]);
         $over = (int)$stmt->fetchColumn();
         if ($over > 0) {
@@ -162,7 +162,7 @@ if ($isAdmin) {
 
     // 4. Vencimientos proximos
     try {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tax_obligations WHERE client_id=? AND status='pendiente' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tax_obligations WHERE client_id=? AND status='pendiente' AND dismissed_at IS NULL AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
         $stmt->execute([$userId]);
         $coming = (int)$stmt->fetchColumn();
         if ($coming > 0) {

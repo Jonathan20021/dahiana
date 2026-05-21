@@ -21,8 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $success = "Marcada como pendiente.";
     } elseif ($action === 'delete') {
         $oid = (int)($_POST['obligation_id'] ?? 0);
-        $pdo->prepare("DELETE FROM tax_obligations WHERE id=?")->execute([$oid]);
-        $success = "Obligacion eliminada.";
+        $pdo->prepare("UPDATE tax_obligations SET dismissed_at=NOW(), dismissed_by=?, status='no_aplica' WHERE id=?")
+            ->execute([(int)$_SESSION['user_id'], $oid]);
+        $success = "Obligacion eliminada. No volvera a generarse automaticamente.";
+    } elseif ($action === 'restore') {
+        $oid = (int)($_POST['obligation_id'] ?? 0);
+        $pdo->prepare("UPDATE tax_obligations SET dismissed_at=NULL, dismissed_by=NULL, status='pendiente' WHERE id=?")
+            ->execute([$oid]);
+        $success = "Obligacion restaurada.";
     } elseif ($action === 'send_email_reminder') {
         $oid = (int)($_POST['obligation_id'] ?? 0);
         $r = sendObligationReminderEmail($oid);
@@ -33,14 +39,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'bulk_delete_completed') {
         $cutoff = trim($_POST['cutoff'] ?? '');
+        $dismissedBy = (int)$_SESSION['user_id'];
         if (preg_match('/^\d{4}-\d{2}$/', $cutoff)) {
-            $stmt = $pdo->prepare("DELETE FROM tax_obligations WHERE status='completado' AND period <= ?");
-            $stmt->execute([$cutoff]);
-            $success = "Se eliminaron " . $stmt->rowCount() . " obligaciones completadas hasta {$cutoff}.";
+            $stmt = $pdo->prepare("UPDATE tax_obligations SET dismissed_at=NOW(), dismissed_by=? WHERE status='completado' AND dismissed_at IS NULL AND period <= ?");
+            $stmt->execute([$dismissedBy, $cutoff]);
+            $success = "Se archivaron " . $stmt->rowCount() . " obligaciones completadas hasta {$cutoff}.";
         } else {
-            $stmt = $pdo->prepare("DELETE FROM tax_obligations WHERE status='completado'");
-            $stmt->execute();
-            $success = "Se eliminaron " . $stmt->rowCount() . " obligaciones completadas.";
+            $stmt = $pdo->prepare("UPDATE tax_obligations SET dismissed_at=NOW(), dismissed_by=? WHERE status='completado' AND dismissed_at IS NULL");
+            $stmt->execute([$dismissedBy]);
+            $success = "Se archivaron " . $stmt->rowCount() . " obligaciones completadas.";
         }
     } elseif ($action === 'bulk_delete') {
         $ids = $_POST['ids'] ?? [];
@@ -48,9 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $ids = array_values(array_filter(array_map('intval', $ids), fn($v) => $v > 0));
         if (!empty($ids)) {
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            $stmt = $pdo->prepare("DELETE FROM tax_obligations WHERE id IN ({$placeholders})");
-            $stmt->execute($ids);
-            $success = "Se eliminaron " . $stmt->rowCount() . " obligacion(es).";
+            $dismissedBy = (int)$_SESSION['user_id'];
+            $stmt = $pdo->prepare("UPDATE tax_obligations SET dismissed_at=NOW(), dismissed_by=?, status='no_aplica' WHERE id IN ({$placeholders})");
+            $stmt->execute(array_merge([$dismissedBy], $ids));
+            $success = "Se eliminaron " . $stmt->rowCount() . " obligacion(es). No volveran a generarse.";
         }
     } elseif ($action === 'regenerate_all') {
         $clients = $pdo->query("
@@ -68,8 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Refresh vencidas
-$pdo->exec("UPDATE tax_obligations SET status='vencido' WHERE status='pendiente' AND due_date < CURDATE()");
+// Refresh vencidas (solo NO eliminadas)
+$pdo->exec("UPDATE tax_obligations SET status='vencido' WHERE status='pendiente' AND dismissed_at IS NULL AND due_date < CURDATE()");
 
 // Filters
 $clientFilter = (int)($_GET['client_id'] ?? 0);
@@ -77,9 +85,17 @@ $typeFilter = $_GET['type'] ?? '';
 $statusFilter = $_GET['status'] ?? '';
 $periodFilter = $_GET['period'] ?? '';
 $range = $_GET['range'] ?? 'upcoming';
+$showDismissed = isset($_GET['dismissed']) && $_GET['dismissed'] === '1';
 
 $where = "WHERE 1=1";
 $params = [];
+
+// Por defecto ocultar eliminadas
+if (!$showDismissed) {
+    $where .= " AND o.dismissed_at IS NULL";
+} else {
+    $where .= " AND o.dismissed_at IS NOT NULL";
+}
 
 if ($clientFilter > 0) {
     $where .= " AND o.client_id = ?";
@@ -223,7 +239,11 @@ include 'components/layout_start.php';
         <option value="<?= $cl['id'] ?>" <?= $clientFilter === (int)$cl['id'] ? 'selected' : '' ?>><?= htmlspecialchars($cl['name']) ?></option>
         <?php endforeach; ?>
     </select>
-    <?php if ($clientFilter || $typeFilter || $statusFilter || $range !== 'upcoming'): ?>
+    <label class="inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer px-2">
+        <input type="checkbox" name="dismissed" value="1" <?= $showDismissed ? 'checked' : '' ?> onchange="this.form.submit()">
+        Ver eliminadas
+    </label>
+    <?php if ($clientFilter || $typeFilter || $statusFilter || $range !== 'upcoming' || $showDismissed): ?>
     <a href="admin_tax_calendar.php" class="btn-soft text-sm">Limpiar</a>
     <?php endif; ?>
 </form>
@@ -352,10 +372,21 @@ include 'components/layout_start.php';
                                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
                                 Abrir cliente
                             </a>
-                            <button type="submit" form="deleteForm-<?= $ob['id'] ?>" class="tc-menu-item tc-menu-item-danger" onclick="return confirm('Eliminar esta obligacion? No se puede deshacer.')">
+                            <?php if (!empty($ob['dismissed_at'])): ?>
+                            <form method="POST" class="contents">
+                                <input type="hidden" name="action" value="restore">
+                                <input type="hidden" name="obligation_id" value="<?= (int)$ob['id'] ?>">
+                                <button type="submit" class="tc-menu-item">
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                                    Restaurar
+                                </button>
+                            </form>
+                            <?php else: ?>
+                            <button type="submit" form="deleteForm-<?= $ob['id'] ?>" class="tc-menu-item tc-menu-item-danger" onclick="return confirm('Eliminar esta obligacion? Quedara archivada y NO se generara de nuevo automaticamente. Si quieres apagar el tipo permanentemente, ve a la ficha del cliente -> Obligaciones DGII trabajadas.')">
                                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>
                                 Eliminar
                             </button>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>

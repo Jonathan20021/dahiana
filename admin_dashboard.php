@@ -62,6 +62,7 @@ $alertCounts = $pdo->query("
         SUM(CASE WHEN status='pendiente' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS week,
         SUM(CASE WHEN status='pendiente' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS month
     FROM tax_obligations
+    WHERE dismissed_at IS NULL
 ")->fetch();
 
 $upcomingObligations = $pdo->query("
@@ -69,6 +70,7 @@ $upcomingObligations = $pdo->query("
     FROM tax_obligations o
     JOIN users u ON u.id = o.client_id
     WHERE o.status IN ('pendiente','vencido')
+      AND o.dismissed_at IS NULL
       AND o.due_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
     ORDER BY o.due_date ASC
     LIMIT 8

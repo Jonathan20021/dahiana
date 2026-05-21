@@ -201,6 +201,8 @@ function bootstrapCrmSchema() {
                 due_date DATE NOT NULL,
                 status VARCHAR(20) NOT NULL DEFAULT 'pendiente',
                 completed_at TIMESTAMP NULL DEFAULT NULL,
+                dismissed_at TIMESTAMP NULL DEFAULT NULL,
+                dismissed_by INT DEFAULT NULL,
                 notes TEXT DEFAULT NULL,
                 auto_generated TINYINT(1) DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -209,7 +211,36 @@ function bootstrapCrmSchema() {
                 INDEX idx_due (due_date),
                 INDEX idx_period (period),
                 INDEX idx_type (obligation_type),
+                INDEX idx_dismissed (dismissed_at),
                 UNIQUE KEY uniq_obligation (client_id, obligation_type, period)
+            )
+        ");
+
+        // ALTER idempotente para BD existentes
+        $obCols = $pdo->query("
+            SELECT COLUMN_NAME FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='tax_obligations'
+        ")->fetchAll(PDO::FETCH_COLUMN);
+        $obCols = array_map('strtolower', $obCols);
+        if (!in_array('dismissed_at', $obCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_obligations ADD COLUMN dismissed_at TIMESTAMP NULL DEFAULT NULL, ADD INDEX idx_dismissed (dismissed_at)"); } catch (PDOException $e) {}
+        }
+        if (!in_array('dismissed_by', $obCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_obligations ADD COLUMN dismissed_by INT DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+
+        // Suscripciones de obligaciones por cliente (lo que la consultora trabaja segun la iguala).
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS client_obligation_subscriptions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                client_id INT NOT NULL,
+                obligation_type VARCHAR(50) NOT NULL,
+                enabled TINYINT(1) NOT NULL DEFAULT 1,
+                notes VARCHAR(255) DEFAULT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_subscription (client_id, obligation_type),
+                INDEX idx_client (client_id)
             )
         ");
 
@@ -460,24 +491,88 @@ function calculateObligationDueDate($type, $period, $fiscalYearClose = '12-31') 
 }
 
 /**
+ * Devuelve las suscripciones de un cliente: [obligation_type => enabled (bool)].
+ * Si nunca se han seteado, las siembra a partir del perfil fiscal y devuelve eso.
+ * Si se pasa $seedFromProfile=false, NO siembra nada (solo lee lo guardado).
+ */
+function getClientObligationSubscriptions($clientId, $seedFromProfile = true) {
+    global $pdo;
+
+    $stmt = $pdo->prepare("SELECT obligation_type, enabled FROM client_obligation_subscriptions WHERE client_id = ?");
+    $stmt->execute([$clientId]);
+    $subs = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    if (empty($subs) && $seedFromProfile) {
+        $u = $pdo->prepare("SELECT tax_regime, business_type, employee_count, operation_type FROM users WHERE id = ?");
+        $u->execute([$clientId]);
+        $row = $u->fetch();
+        if ($row) {
+            $defaultTypes = getObligationsForProfile(
+                $row['tax_regime'] ?? 'ordinario',
+                $row['business_type'] ?? 'fisica',
+                (int)($row['employee_count'] ?? 0),
+                $row['operation_type'] ?? 'servicios'
+            );
+            $ins = $pdo->prepare("INSERT IGNORE INTO client_obligation_subscriptions (client_id, obligation_type, enabled) VALUES (?, ?, 1)");
+            foreach ($defaultTypes as $t) {
+                $ins->execute([$clientId, $t]);
+                $subs[$t] = 1;
+            }
+        }
+    }
+    // Convertir a bool int
+    $out = [];
+    foreach ($subs as $type => $enabled) {
+        $out[$type] = (int)$enabled === 1;
+    }
+    return $out;
+}
+
+/**
+ * Reemplaza la lista de suscripciones de un cliente.
+ * $enabledTypes es un array de codigos (['IT-1', '606', ...]) que se marcaran como enabled=1;
+ * el resto de tipos conocidos quedan enabled=0 (pero se conserva el row para historial).
+ */
+function setClientObligationSubscriptions($clientId, array $enabledTypes) {
+    global $pdo;
+    $allTypes = array_keys(getObligationTypes());
+    $upsert = $pdo->prepare("
+        INSERT INTO client_obligation_subscriptions (client_id, obligation_type, enabled)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_at = NOW()
+    ");
+    foreach ($allTypes as $t) {
+        $enabled = in_array($t, $enabledTypes, true) ? 1 : 0;
+        $upsert->execute([$clientId, $t, $enabled]);
+    }
+}
+
+/**
  * Generate (or update) tax obligations for a client for the upcoming N periods.
- * Idempotent: uses UNIQUE constraint to avoid duplicates.
+ * Idempotent: usa UNIQUE constraint para no duplicar.
+ *
+ * Reglas IMPORTANTES:
+ *  1. Solo genera para tipos SUSCRITOS (enabled=1) en client_obligation_subscriptions.
+ *  2. Si ya existe una fila para (cliente, tipo, periodo), no la toca — esto preserva las
+ *     que la consultora elimino (dismissed_at NOT NULL) para que no vuelvan a aparecer.
+ *  3. La auto-generacion solo debe correrse desde acciones explicitas de la consultora
+ *     (boton Sincronizar, creacion del cliente, cron diario, signup aprobado) — nunca desde
+ *     vistas del cliente.
  */
 function generateObligationsForClient($clientId, $monthsAhead = 6) {
     global $pdo;
 
-    $stmt = $pdo->prepare("SELECT tax_regime, business_type, employee_count, operation_type, fiscal_year_close, client_status FROM users WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT fiscal_year_close, client_status FROM users WHERE id = ?");
     $stmt->execute([$clientId]);
     $u = $stmt->fetch();
     if (!$u || ($u['client_status'] ?? 'activo') === 'inactivo') return 0;
-
-    $regime = $u['tax_regime'] ?? 'ordinario';
-    $businessType = $u['business_type'] ?? 'fisica';
-    $employeeCount = (int)($u['employee_count'] ?? 0);
-    $operationType = $u['operation_type'] ?? 'servicios';
     $fiscalClose = $u['fiscal_year_close'] ?? '12-31';
 
-    $required = getObligationsForProfile($regime, $businessType, $employeeCount, $operationType);
+    // Suscripciones (sembrandolas desde perfil si no existen aun)
+    $subs = getClientObligationSubscriptions($clientId, true);
+    $enabledTypes = array_keys(array_filter($subs));
+    if (empty($enabledTypes)) return 0;
+
     $types = getObligationTypes();
 
     $insertStmt = $pdo->prepare("
@@ -487,12 +582,9 @@ function generateObligationsForClient($clientId, $monthsAhead = 6) {
     ");
 
     $count = 0;
-
-    // Current period (this month)
     $currentPeriod = date('Y-m');
 
-    // Generate monthly: from current month to monthsAhead
-    foreach ($required as $type) {
+    foreach ($enabledTypes as $type) {
         $cfg = $types[$type] ?? null;
         if (!$cfg) continue;
 
@@ -506,7 +598,6 @@ function generateObligationsForClient($clientId, $monthsAhead = 6) {
                 }
             }
         } elseif ($cfg['cadence'] === 'annual') {
-            // current year + next year
             $thisYear = date('Y');
             foreach ([$thisYear, (int)$thisYear + 1] as $yr) {
                 $due = calculateObligationDueDate($type, (string)$yr, $fiscalClose);
@@ -518,8 +609,8 @@ function generateObligationsForClient($clientId, $monthsAhead = 6) {
         }
     }
 
-    // Mark overdue
-    $pdo->prepare("UPDATE tax_obligations SET status = 'vencido' WHERE client_id = ? AND status = 'pendiente' AND due_date < CURDATE()")->execute([$clientId]);
+    // Mark overdue (solo no eliminadas)
+    $pdo->prepare("UPDATE tax_obligations SET status = 'vencido' WHERE client_id = ? AND status = 'pendiente' AND dismissed_at IS NULL AND due_date < CURDATE()")->execute([$clientId]);
 
     return $count;
 }

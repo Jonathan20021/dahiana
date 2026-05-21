@@ -79,6 +79,7 @@ try {
             FROM tax_obligations o
             JOIN users u ON u.id = o.client_id
             WHERE o.status = 'pendiente'
+              AND o.dismissed_at IS NULL
               AND o.due_date = DATE_ADD(CURDATE(), INTERVAL ? DAY)
               AND COALESCE(u.client_status, 'activo') != 'inactivo'
         ");

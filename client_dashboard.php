@@ -74,11 +74,10 @@ $recentInv = $pdo->prepare("
 $recentInv->execute([$client_id]);
 $recentInvoices = $recentInv->fetchAll();
 
-// Refresh tax obligations + filter upcoming
-generateObligationsForClient($client_id, 3);
+// Solo leer obligaciones (la creacion la maneja la consultora, NUNCA auto-regenerar desde vistas del cliente)
 $oblStmt = $pdo->prepare("
     SELECT * FROM tax_obligations
-    WHERE client_id = ? AND status IN ('pendiente','vencido')
+    WHERE client_id = ? AND status IN ('pendiente','vencido') AND dismissed_at IS NULL
     ORDER BY due_date ASC LIMIT 6
 ");
 $oblStmt->execute([$client_id]);

@@ -37,7 +37,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $success = "Cliente actualizado. Obligaciones DGII sincronizadas (+{$gen} nuevas).";
     } elseif ($action === 'regenerate_obligations') {
         $gen = generateObligationsForClient($client_id, 12);
-        $success = "Obligaciones DGII regeneradas para los proximos 12 meses (+{$gen}).";
+        $success = "Obligaciones DGII regeneradas para los proximos 12 meses (+{$gen} nuevas).";
+    } elseif ($action === 'save_subscriptions') {
+        $picked = $_POST['obligations'] ?? [];
+        if (!is_array($picked)) $picked = [];
+        $valid = array_keys(getObligationTypes());
+        $picked = array_values(array_intersect($picked, $valid));
+        setClientObligationSubscriptions($client_id, $picked);
+        // Regenerar 12 meses con los nuevos tipos activos
+        $gen = generateObligationsForClient($client_id, 12);
+        // Si la consultora QUITO un tipo, marcar las obligaciones futuras de ese tipo como eliminadas
+        if (!empty($valid)) {
+            $disabled = array_diff($valid, $picked);
+            if (!empty($disabled)) {
+                $ph = implode(',', array_fill(0, count($disabled), '?'));
+                $stmt = $pdo->prepare("UPDATE tax_obligations SET dismissed_at=NOW(), dismissed_by=?, status='no_aplica' WHERE client_id=? AND dismissed_at IS NULL AND status IN ('pendiente','vencido') AND due_date >= CURDATE() AND obligation_type IN ({$ph})");
+                $stmt->execute(array_merge([(int)$_SESSION['user_id'], $client_id], array_values($disabled)));
+            }
+        }
+        logClientActivity($client_id, 'tax', 'Suscripciones de obligaciones actualizadas: ' . implode(', ', $picked));
+        $success = "Obligaciones que se trabajan con este cliente actualizadas. (" . count($picked) . " activas, +{$gen} nuevas generadas)";
     } elseif ($action === 'toggle_obligation') {
         $obId = (int)($_POST['obligation_id'] ?? 0);
         $newStatus = $_POST['new_status'] ?? 'completado';
@@ -136,12 +155,12 @@ $timelineStmt->execute([$client_id]);
 $timeline = $timelineStmt->fetchAll();
 
 // Tax obligations for this client
-$obStmt = $pdo->prepare("SELECT * FROM tax_obligations WHERE client_id = ? ORDER BY due_date ASC LIMIT 24");
+$obStmt = $pdo->prepare("SELECT * FROM tax_obligations WHERE client_id = ? AND dismissed_at IS NULL ORDER BY due_date ASC LIMIT 24");
 $obStmt->execute([$client_id]);
 $obligations = $obStmt->fetchAll();
 
-// Update overdue status
-$pdo->prepare("UPDATE tax_obligations SET status = 'vencido' WHERE client_id = ? AND status = 'pendiente' AND due_date < CURDATE()")->execute([$client_id]);
+// Update overdue status (solo no eliminadas)
+$pdo->prepare("UPDATE tax_obligations SET status = 'vencido' WHERE client_id = ? AND status = 'pendiente' AND dismissed_at IS NULL AND due_date < CURDATE()")->execute([$client_id]);
 
 function getWhatsAppLink($phone, $clientName, $requestTitle, $status) {
     if (!$phone) return "#";
@@ -348,11 +367,102 @@ include 'components/layout_start.php';
             <?php endif; ?>
         </div>
 
-        <!-- Tax obligations DGII -->
+        <!-- Obligaciones DGII trabajadas (suscripciones) -->
+        <?php
+        $clientSubs = getClientObligationSubscriptions($client_id, true);
+        $allObTypes = getObligationTypes();
+        $defaultRecommended = getObligationsForProfile(
+            $client['tax_regime'] ?? 'ordinario',
+            $client['business_type'] ?? 'fisica',
+            (int)($client['employee_count'] ?? 0),
+            $client['operation_type'] ?? 'servicios'
+        );
+        ?>
         <div class="surface-card overflow-hidden">
+            <div class="px-5 py-3 border-b border-stone-100 flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">Obligaciones DGII trabajadas</h3>
+                    <p class="text-[11px] text-slate-500">Marca solo las que cubre la iguala con este cliente. Solo las activas se generan automaticamente.</p>
+                </div>
+                <button type="button" onclick="document.getElementById('subsPanel').classList.toggle('hidden')" class="btn-soft text-xs">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    Editar
+                </button>
+            </div>
+            <div class="p-5">
+                <!-- Resumen activas -->
+                <div class="flex flex-wrap gap-1.5">
+                    <?php
+                    $activeCount = 0;
+                    foreach ($allObTypes as $code => $meta):
+                        if (!empty($clientSubs[$code])):
+                            $activeCount++;
+                    ?>
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-100">
+                        <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M16.7 5.3l-8.4 8.4-4.7-4.7-1.4 1.4 6.1 6.1 9.8-9.8z"/></svg>
+                        <?= htmlspecialchars($code) ?>
+                    </span>
+                    <?php endif; endforeach; ?>
+                    <?php if ($activeCount === 0): ?>
+                    <span class="text-[11px] text-slate-400 italic">Aun no se han activado obligaciones para este cliente.</span>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Panel de edicion oculto -->
+                <form id="subsPanel" action="client_details.php?id=<?= $client_id ?>" method="POST" class="hidden mt-4 pt-4 border-t border-slate-100">
+                    <input type="hidden" name="action" value="save_subscriptions">
+                    <div class="mb-3 p-3 rounded-xl bg-blue-50/40 border border-blue-100 text-[11.5px] text-slate-700">
+                        Si quitas una obligacion ya generada, todas las futuras pendientes de ese tipo seran archivadas y NO volveran a generarse hasta que la actives de nuevo.
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                        <?php foreach ($allObTypes as $code => $meta):
+                            $isActive = !empty($clientSubs[$code]);
+                            $isRecommended = in_array($code, $defaultRecommended, true);
+                        ?>
+                        <label class="flex items-start gap-3 p-3 rounded-xl border <?= $isActive ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white' ?> cursor-pointer hover:border-slate-400 transition-all">
+                            <input type="checkbox" name="obligations[]" value="<?= htmlspecialchars($code) ?>" <?= $isActive ? 'checked' : '' ?> class="mt-1">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-bold text-slate-900 flex items-center gap-2"><?= htmlspecialchars($code) ?>
+                                    <?php if ($isRecommended): ?>
+                                    <span class="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">SUGERIDA</span>
+                                    <?php endif; ?>
+                                </p>
+                                <p class="text-[11px] text-slate-500"><?= htmlspecialchars($meta['label']) ?></p>
+                                <p class="text-[10px] text-slate-400 mt-0.5">
+                                    <?= $meta['cadence'] === 'monthly' ? 'Mensual · dia ' . $meta['due_day'] : 'Anual' ?>
+                                </p>
+                            </div>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick="document.querySelectorAll('#subsPanel input[type=checkbox]').forEach(c=>c.checked=true)" class="text-[11px] text-slate-500 hover:text-slate-900 px-2 py-1">Marcar todas</button>
+                            <button type="button" onclick="document.querySelectorAll('#subsPanel input[type=checkbox]').forEach(c=>c.checked=false)" class="text-[11px] text-slate-500 hover:text-slate-900 px-2 py-1">Desmarcar</button>
+                            <button type="button" id="markRecommendedBtn" class="text-[11px] text-blue-600 hover:text-blue-800 px-2 py-1 font-semibold">Solo sugeridas</button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="document.getElementById('subsPanel').classList.add('hidden')" class="btn-soft text-xs">Cancelar</button>
+                            <button type="submit" class="btn-dark text-xs">Guardar</button>
+                        </div>
+                    </div>
+                    <script>
+                    document.getElementById('markRecommendedBtn')?.addEventListener('click', function() {
+                        const recommended = <?= json_encode(array_values($defaultRecommended)) ?>;
+                        document.querySelectorAll('#subsPanel input[type=checkbox]').forEach(c => {
+                            c.checked = recommended.includes(c.value);
+                        });
+                    });
+                    </script>
+                </form>
+            </div>
+        </div>
+
+        <!-- Calendario de obligaciones generadas -->
+        <div class="surface-card overflow-hidden mt-3">
             <div class="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
                 <div>
-                    <h3 class="text-sm font-bold text-slate-900">Obligaciones DGII</h3>
+                    <h3 class="text-sm font-bold text-slate-900">Calendario fiscal del cliente</h3>
                     <p class="text-[11px] text-slate-500"><?= htmlspecialchars(getTaxRegimeLabel($client['tax_regime'] ?? 'ordinario')) ?> &middot; Cierre <?= htmlspecialchars($client['fiscal_year_close'] ?? '12-31') ?></p>
                 </div>
                 <div class="flex items-center gap-2">

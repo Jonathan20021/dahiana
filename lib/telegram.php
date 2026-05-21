@@ -21,8 +21,11 @@ function tgApi($method, $params = [], $multipart = false) {
     $ch  = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    // getUpdates con long-poll necesita timeout > el "timeout" del parametro.
+    // El polling usa timeout=25s, asi que damos 40s de holgura.
+    $isLongPoll = ($method === 'getUpdates' && !empty($params['timeout']));
+    curl_setopt($ch, CURLOPT_TIMEOUT, $isLongPoll ? 40 : 25);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
     if ($multipart) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
     } else {

@@ -125,6 +125,7 @@ if (strlen($q) >= 3) {
         JOIN users u ON u.id = o.client_id
         WHERE (o.obligation_type LIKE ? OR u.name LIKE ?)
           AND o.status IN ('pendiente','vencido')
+          AND o.dismissed_at IS NULL
         ORDER BY o.due_date ASC
         LIMIT 6
     ");
