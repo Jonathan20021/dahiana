@@ -55,7 +55,21 @@ function dgiiTrimNum($n, $blankIfZero = true) {
  * Coincide con como la consultora arma el archivo oficial.
  */
 function dgiiIsService($taxType) {
-    return in_array((string)$taxType, ['01','02','03','05','06','07','08','11'], true);
+    $code = str_pad((string)$taxType, 2, '0', STR_PAD_LEFT);
+    return in_array($code, ['01','02','03','05','06','07','08','11'], true);
+}
+
+/**
+ * Devuelve "codigo - etiqueta" para una celda del Excel a partir de un catalogo
+ * tipo aiExpenseCategories(). Normaliza siempre el codigo a 2 digitos (09, no 9).
+ * Si la etiqueta no esta en el catalogo, devuelve solo el codigo normalizado.
+ * Si el codigo viene vacio, devuelve cadena vacia.
+ */
+function dgiiLabelCode($code, array $catalog, $pad = 2) {
+    $code = (string)$code;
+    if ($code === '') return '';
+    if ($pad > 0) $code = str_pad($code, $pad, '0', STR_PAD_LEFT);
+    return isset($catalog[$code]) ? "{$code} - {$catalog[$code]}" : $code;
 }
 
 // --------------------------------------------------------------------------
@@ -100,9 +114,10 @@ function dgiiTxt606($filing) {
     foreach ($rows as $r) {
         $rnc       = dgiiDigits($r['rnc']);
         $tipoId    = ($r['identification_type'] ?? '') !== ''
-                     ? $r['identification_type']
+                     ? (string)$r['identification_type']
                      : (strlen($rnc) === 11 ? '2' : '1');
-        $tipoBien  = $r['tax_type'] ?: '09';
+        // DGII exige codigos de 2 digitos (01-11) para tipo bien/servicio.
+        $tipoBien  = str_pad((string)($r['tax_type'] ?: '09'), 2, '0', STR_PAD_LEFT);
         $ncf       = dgiiUpper($r['ncf']);
         $ncfMod    = dgiiUpper($r['ncf_modified']);
         $fechaDoc  = dgiiDate($r['date_doc']);
@@ -128,8 +143,10 @@ function dgiiTxt606($filing) {
                 ?: (($tipoBien === '03') ? '01' : '02');
         }
 
-        // Forma de pago: viene del extractor IA (codigos DGII 01-07).
-        $formaPago = $r['payment_method'] ?? '';
+        // Forma de pago: viene del extractor IA (codigos DGII 01-07). Siempre 2 digitos.
+        $formaPago = ($r['payment_method'] ?? '') !== ''
+            ? str_pad((string)$r['payment_method'], 2, '0', STR_PAD_LEFT)
+            : '';
 
         $cols = [
             $rnc,                                          //  1 RNC/Cedula
@@ -223,11 +240,12 @@ function dgiiTxt607($filing) {
     foreach ($rows as $r) {
         $rnc       = dgiiDigits($r['rnc']);
         $tipoId    = ($r['identification_type'] ?? '') !== ''
-                     ? $r['identification_type']
+                     ? (string)$r['identification_type']
                      : ($rnc === '' ? '' : (strlen($rnc) === 11 ? '2' : '1'));
         $ncf       = dgiiUpper($r['ncf']);
         $ncfMod    = dgiiUpper($r['ncf_modified']);
-        $tipoIng   = !empty($r['income_type']) ? $r['income_type'] : '01';
+        // DGII exige codigos de 2 digitos (01-06) para tipo de ingreso.
+        $tipoIng   = str_pad((string)(!empty($r['income_type']) ? $r['income_type'] : '01'), 2, '0', STR_PAD_LEFT);
         $fechaDoc  = dgiiDate($r['date_doc']);
         $fechaRet  = dgiiDate($r['date_payment']);
 
@@ -291,6 +309,7 @@ function dgiiTxt608($filing) {
             // En filas viejas el catalogo viajaba en tax_type. Aceptamos esa convencion.
             $tipo = ($r['tax_type'] ?? '') ?: '02';
         }
+        $tipo = str_pad((string)$tipo, 2, '0', STR_PAD_LEFT);
         $cols = [dgiiUpper($r['ncf']), dgiiDate($r['date_doc']), $tipo];
         $lines[] = implode('|', $cols);
     }
@@ -378,12 +397,17 @@ function dgiiExcelHeader608() {
 }
 
 function dgiiExcelRows606($filing) {
+    $catId   = function_exists('aiIdentificationTypes') ? aiIdentificationTypes() : [];
+    $catBien = function_exists('aiExpenseCategories')   ? aiExpenseCategories()   : [];
+    $catRet  = function_exists('aiIsrRetentionTypes')   ? aiIsrRetentionTypes()   : [];
+    $catPay  = function_exists('aiPaymentMethods')      ? aiPaymentMethods()      : [];
+
     $out = [];
     foreach ($filing['rows'] as $r) {
         $rnc      = dgiiDigits($r['rnc']);
-        $tipoBien = $r['tax_type'] ?: '09';
+        $tipoBien = str_pad((string)($r['tax_type'] ?: '09'), 2, '0', STR_PAD_LEFT);
         $tipoId   = ($r['identification_type'] ?? '') !== ''
-                    ? $r['identification_type']
+                    ? (string)$r['identification_type']
                     : (strlen($rnc) === 11 ? '2' : '1');
 
         $amount   = (float)$r['amount'];
@@ -404,8 +428,8 @@ function dgiiExcelRows606($filing) {
 
         $out[] = [
             $rnc,                                                                       // 1
-            $tipoId,                                                                    // 2
-            $tipoBien,                                                                  // 3
+            dgiiLabelCode($tipoId, $catId, 1),                                          // 2
+            dgiiLabelCode($tipoBien, $catBien),                                         // 3
             dgiiUpper($r['ncf']),                                                       // 4
             dgiiUpper($r['ncf_modified']),                                              // 5
             dgiiDate($r['date_doc']),                                                   // 6 YYYYMMDD
@@ -425,19 +449,25 @@ function dgiiExcelRows606($filing) {
             dgiiTrimNum($isc),                                                          // 20
             dgiiTrimNum($otros),                                                        // 21
             dgiiTrimNum($propina),                                                      // 22
-            $r['payment_method'] ?? '',                                                 // 23
+            dgiiLabelCode($r['payment_method'] ?? '', $catPay),                         // 23
         ];
+
+        // Reemplaza la celda Tipo Ret. ISR (indice 16) por su etiqueta legible.
+        $out[count($out) - 1][16] = dgiiLabelCode($tipoRetIsr, $catRet);
     }
     return $out;
 }
 function dgiiExcelRows607($filing) {
+    $catId   = function_exists('aiIdentificationTypes') ? aiIdentificationTypes() : [];
+    $catIng  = function_exists('aiIncomeTypes')         ? aiIncomeTypes()         : [];
+
     $out = [];
     foreach ($filing['rows'] as $r) {
         $rnc    = dgiiDigits($r['rnc']);
         $tipoId = ($r['identification_type'] ?? '') !== ''
-                  ? $r['identification_type']
+                  ? (string)$r['identification_type']
                   : ($rnc === '' ? '' : (strlen($rnc) === 11 ? '2' : '1'));
-        $tipoIng = !empty($r['income_type']) ? $r['income_type'] : '01';
+        $tipoIng = str_pad((string)($r['income_type'] ?: '01'), 2, '0', STR_PAD_LEFT);
 
         $amount   = (float)$r['amount'];
         $itbis    = (float)$r['itbis'];
@@ -455,10 +485,10 @@ function dgiiExcelRows607($filing) {
 
         $out[] = [
             $rnc,                                                                       //  1
-            $tipoId,                                                                    //  2
+            dgiiLabelCode($tipoId, $catId, 1),                                          //  2
             dgiiUpper($r['ncf']),                                                       //  3
             dgiiUpper($r['ncf_modified']),                                              //  4
-            $tipoIng,                                                                   //  5
+            dgiiLabelCode($tipoIng, $catIng),                                           //  5
             dgiiDate($r['date_doc']),                                                   //  6
             dgiiDate($r['date_payment']),                                               //  7
             dgiiTrimNum($amount, false),                                                //  8
