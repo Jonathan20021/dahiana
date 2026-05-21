@@ -183,39 +183,39 @@
 
     // ===== Contenido de cada variante
     function buildVariant(variant) {
-        const shareIcon = svgInline('<path d="M12 2v13"/><polyline points="7 7 12 2 17 7"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>', 26);
-        const addIcon   = '<span class="pwa-step-mini-icon">⊕</span>';
-        const menuIcon  = svgInline('<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>', 22);
-        const phoneIcon = svgInline('<rect x="6" y="2" width="12" height="20" rx="2.5"/><line x1="11" y1="18" x2="13" y2="18"/>', 22);
+        // Chips visuales reusables (replican exactamente lo que el usuario vera)
+        const shareChip = chipBtn(svgInline('<path d="M12 2v13"/><polyline points="7 7 12 2 17 7"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>', 18), 'Compartir', 'blue');
+        const addToHomeChip = chipBtn('<span class="pwa-chip-plus">+</span>', 'Anadir a pantalla de inicio', 'neutral');
+        const addBtn = chipBtn('', 'Anadir', 'ios-blue');
+        const menuChip = chipBtn(svgInline('<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>', 18), 'Menu', 'neutral');
+        const installAppChip = chipBtn('<span class="pwa-chip-plus">⊕</span>', 'Instalar app', 'neutral');
+        const installBtn = chipBtn('', 'Instalar', 'ios-blue');
 
         if (variant === 'safari-ios') {
             return ''
                 + headerFor('Instala la app en tu iPhone', 'Solo toma 5 segundos.')
                 + '<div class="pwa-steps">'
-                +   step(1, 'Toca el icono <strong>Compartir</strong>', shareIcon,
-                       (isIPad ? 'Esta arriba a la derecha en Safari.' : 'Esta abajo en el centro de Safari.'))
-                +   step(2, 'Desliza hacia abajo y toca', addIcon + '<strong> Anadir a pantalla de inicio</strong>',
-                       'Si no lo ves, sigue bajando — esta debajo de "Copiar".')
-                +   step(3, 'Toca <strong>Anadir</strong> arriba a la derecha', '<span class="pwa-step-mini-text">Anadir</span>',
-                       'Listo. Veras el icono en tu inicio como una app.')
+                +   step(1, 'Toca el icono <strong>Compartir</strong>',
+                       (isIPad ? 'Esta arriba a la derecha en Safari.' : 'Esta en la barra de abajo de Safari.'),
+                       shareChip)
+                +   step(2, 'Desliza hacia abajo y toca esta opcion:',
+                       'Si no la ves, sigue bajando — queda debajo de "Copiar" y "Agregar a Marcadores".',
+                       addToHomeChip)
+                +   step(3, 'Toca <strong>Anadir</strong> arriba a la derecha',
+                       'Listo. Veras el icono en tu pantalla de inicio como una app nativa.',
+                       addBtn)
                 + '</div>'
-                + '<div class="pwa-modal-actions"><button type="button" class="pwa-btn pwa-btn-primary" data-pwa-ok>Entendido</button></div>';
+                + actionsBlock();
         }
         if (variant === 'ios-non-safari') {
             const browser = isIOSChrome ? 'Chrome' : (isIOSFirefox ? 'Firefox' : (isIOSEdge ? 'Edge' : 'este navegador'));
             return ''
-                + headerFor('Necesitas Safari para instalar', browser + ' en iPhone no permite instalar apps web (limite de Apple).')
-                + '<div class="pwa-info-block">'
-                +   '<div class="pwa-info-icon">' + phoneIcon + '</div>'
-                +   '<div>'
-                +     '<p class="pwa-info-title">Pasos faciles:</p>'
-                +     '<ol class="pwa-info-list">'
-                +       '<li>Copia el enlace con el boton de abajo.</li>'
-                +       '<li>Abre <strong>Safari</strong> en tu iPhone.</li>'
-                +       '<li>Pega el enlace y abrelo.</li>'
-                +       '<li>Toca Compartir → "Anadir a pantalla de inicio".</li>'
-                +     '</ol>'
-                +   '</div>'
+                + headerFor('Necesitas Safari para instalar', browser + ' en iPhone no permite instalar apps web (es un limite de Apple, no nuestro).')
+                + '<div class="pwa-info-list">'
+                +   miniStep(1, 'Toca <strong>Copiar enlace</strong> aqui abajo.')
+                +   miniStep(2, 'Abre <strong>Safari</strong> en tu iPhone.')
+                +   miniStep(3, 'Pega el enlace en la barra de direcciones.')
+                +   miniStep(4, 'Toca Compartir → <strong>"Anadir a pantalla de inicio"</strong>.')
                 + '</div>'
                 + '<div class="pwa-modal-actions">'
                 +   '<button type="button" class="pwa-btn pwa-btn-primary" data-pwa-copy>Copiar enlace</button>'
@@ -226,48 +226,51 @@
             return ''
                 + headerFor('Instala la app en tu Android', 'Es gratis y ocupa muy poco espacio.')
                 + '<div class="pwa-steps">'
-                +   step(1, 'Toca el menu <strong>(⋮)</strong>', menuIcon, 'Arriba a la derecha en Chrome.')
-                +   step(2, 'Toca <strong>"Instalar app"</strong> o <strong>"Anadir a pantalla principal"</strong>', addIcon, 'Segun version de Chrome.')
-                +   step(3, 'Confirma con <strong>Instalar</strong>', '<span class="pwa-step-mini-text">Instalar</span>', 'La app aparecera en tu lanzador como cualquier otra.')
+                +   step(1, 'Toca el menu de Chrome', 'Arriba a la derecha (los tres puntos).', menuChip)
+                +   step(2, 'Toca esta opcion:', 'Si no aparece "Instalar app", busca "Anadir a pantalla principal".', installAppChip)
+                +   step(3, 'Confirma con <strong>Instalar</strong>', 'La app aparecera en tu lanzador como cualquier otra.', installBtn)
                 + '</div>'
-                + '<div class="pwa-modal-actions"><button type="button" class="pwa-btn pwa-btn-primary" data-pwa-ok>Entendido</button></div>';
+                + actionsBlock();
         }
         if (variant === 'samsung') {
             return ''
                 + headerFor('Instala la app (Samsung Internet)', '')
                 + '<div class="pwa-steps">'
-                +   step(1, 'Toca el menu <strong>(≡)</strong> abajo', menuIcon, '')
-                +   step(2, 'Toca <strong>"Anadir pagina a"</strong> → <strong>"Pantalla de inicio"</strong>', addIcon, '')
-                +   step(3, 'Confirma con <strong>Anadir</strong>', '<span class="pwa-step-mini-text">Anadir</span>', '')
+                +   step(1, 'Toca el menu (≡)', 'Esta abajo en el centro.', menuChip)
+                +   step(2, 'Toca <strong>"Anadir pagina a"</strong> → <strong>"Pantalla de inicio"</strong>', '', installAppChip)
+                +   step(3, 'Confirma con <strong>Anadir</strong>', '', addBtn)
                 + '</div>'
-                + '<div class="pwa-modal-actions"><button type="button" class="pwa-btn pwa-btn-primary" data-pwa-ok>Entendido</button></div>';
+                + actionsBlock();
         }
         if (variant === 'android-firefox') {
             return ''
                 + headerFor('Instala la app (Firefox Android)', '')
                 + '<div class="pwa-steps">'
-                +   step(1, 'Toca el menu <strong>(⋮)</strong>', menuIcon, '')
-                +   step(2, 'Toca <strong>"Instalar"</strong> o <strong>"Anadir a inicio"</strong>', addIcon, '')
-                +   step(3, 'Confirma con <strong>Anadir</strong>', '<span class="pwa-step-mini-text">Anadir</span>', '')
+                +   step(1, 'Toca el menu de Firefox', 'Los tres puntos arriba a la derecha.', menuChip)
+                +   step(2, 'Toca <strong>"Instalar"</strong> o <strong>"Anadir a inicio"</strong>', '', installAppChip)
+                +   step(3, 'Confirma con <strong>Anadir</strong>', '', addBtn)
                 + '</div>'
-                + '<div class="pwa-modal-actions"><button type="button" class="pwa-btn pwa-btn-primary" data-pwa-ok>Entendido</button></div>';
+                + actionsBlock();
         }
         if (variant === 'unsupported') {
             return ''
                 + headerFor('Tu navegador no soporta instalacion', 'Abre la pagina en Chrome, Edge o Safari (iOS).')
-                + '<div class="pwa-modal-actions"><button type="button" class="pwa-btn pwa-btn-primary" data-pwa-ok>Entendido</button></div>';
+                + actionsBlock();
         }
         // desktop
         return ''
             + headerFor('Instala la app', 'Para usarla como un programa de escritorio.')
             + '<div class="pwa-steps">'
-            +   step(1, 'En la barra de direcciones busca el icono ⊕', addIcon, 'Suele estar al final de la URL.')
-            +   step(2, 'O abre el menu y elige <strong>"Instalar..."</strong>', menuIcon, '')
-            +   step(3, 'Confirma con <strong>Instalar</strong>', '<span class="pwa-step-mini-text">Instalar</span>', '')
+            +   step(1, 'En la barra de direcciones busca el icono ⊕', 'Suele estar al final de la URL.', installAppChip)
+            +   step(2, 'O abre el menu del navegador', '', menuChip)
+            +   step(3, 'Elige <strong>"Instalar..."</strong> y confirma', '', installBtn)
             + '</div>'
-            + '<div class="pwa-modal-actions"><button type="button" class="pwa-btn pwa-btn-primary" data-pwa-ok>Entendido</button></div>';
+            + actionsBlock();
     }
 
+    function actionsBlock() {
+        return '<div class="pwa-modal-actions"><button type="button" class="pwa-btn pwa-btn-primary" data-pwa-ok>Entendido</button></div>';
+    }
     function headerFor(title, subtitle) {
         return ''
             + '<div class="pwa-modal-icon">'
@@ -276,15 +279,25 @@
             + '<h3 class="pwa-modal-title">' + title + '</h3>'
             + (subtitle ? '<p class="pwa-modal-sub">' + subtitle + '</p>' : '');
     }
-    function step(num, html, icon, hint) {
+    function step(num, title, hint, chipHtml) {
         return ''
             + '<div class="pwa-step">'
             +   '<span class="pwa-step-num">' + num + '</span>'
             +   '<div class="pwa-step-main">'
-            +     '<div class="pwa-step-text">' + html + (icon ? '<span class="pwa-step-icon">' + icon + '</span>' : '') + '</div>'
+            +     '<div class="pwa-step-title">' + title + '</div>'
+            +     (chipHtml ? '<div class="pwa-step-chip-row">' + chipHtml + '</div>' : '')
             +     (hint ? '<div class="pwa-step-hint">' + hint + '</div>' : '')
             +   '</div>'
             + '</div>';
+    }
+    function miniStep(num, html) {
+        return '<div class="pwa-mini-step"><span class="pwa-mini-num">' + num + '</span><span>' + html + '</span></div>';
+    }
+    function chipBtn(iconHtml, label, kind) {
+        return '<span class="pwa-chip pwa-chip-' + (kind || 'neutral') + '">'
+             + (iconHtml ? '<span class="pwa-chip-icon">' + iconHtml + '</span>' : '')
+             + '<span class="pwa-chip-label">' + label + '</span>'
+             + '</span>';
     }
     function svgInline(paths, size) {
         size = size || 22;
@@ -405,9 +418,9 @@
             .pwa-modal-title { font-size: 19px; font-weight: 800; color: #0F172A; margin: 0 0 4px; letter-spacing: -0.01em; }
             .pwa-modal-sub { font-size: 13px; color: #64748B; margin: 0 0 16px; line-height: 1.5; }
 
-            .pwa-steps { display: flex; flex-direction: column; gap: 14px; margin: 14px 0 18px; }
+            .pwa-steps { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 18px; }
             .pwa-step {
-                display: flex; gap: 12px;
+                display: flex; gap: 12px; align-items: flex-start;
                 background: #F8FAFC;
                 border: 1px solid #EEF0F2;
                 border-radius: 14px;
@@ -420,49 +433,65 @@
                 background: #0F172A; color: #fff;
                 font-size: 12px; font-weight: 800;
                 display: inline-flex; align-items: center; justify-content: center;
+                margin-top: 1px;
             }
             .pwa-step-main { flex: 1; min-width: 0; }
-            .pwa-step-text { font-size: 13.5px; color: #0F172A; line-height: 1.45; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-            .pwa-step-text strong { font-weight: 800; }
-            .pwa-step-icon {
-                display: inline-flex; align-items: center; justify-content: center;
-                width: 30px; height: 30px;
-                background: #fff; border: 1px solid #E5E7EB; border-radius: 8px;
-                color: #2563EB; margin-left: 2px;
-                vertical-align: middle;
-            }
-            .pwa-step-mini-icon {
-                display: inline-flex; align-items: center; justify-content: center;
-                width: 22px; height: 22px;
-                background: #DBEAFE; color: #1D4ED8;
-                border-radius: 6px; font-weight: 800; font-size: 14px;
-                margin: 0 2px;
-                vertical-align: middle;
-            }
-            .pwa-step-mini-text {
-                display: inline-block; padding: 3px 10px;
-                background: #0F172A; color: #fff;
-                border-radius: 6px; font-size: 11px; font-weight: 700;
-                margin-left: 4px;
-                vertical-align: middle;
-            }
-            .pwa-step-hint { font-size: 11.5px; color: #64748B; margin-top: 4px; line-height: 1.4; }
+            .pwa-step-title { font-size: 13.5px; color: #0F172A; line-height: 1.45; font-weight: 500; }
+            .pwa-step-title strong { font-weight: 800; }
+            .pwa-step-chip-row { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+            .pwa-step-hint { font-size: 11.5px; color: #64748B; margin-top: 6px; line-height: 1.45; }
 
-            .pwa-info-block {
-                display: flex; gap: 14px; align-items: flex-start;
-                background: #F1F5F9; border-radius: 14px; padding: 14px;
-                margin-bottom: 18px;
+            /* Chips — replican lo que el usuario ve en su navegador */
+            .pwa-chip {
+                display: inline-flex; align-items: center; gap: 7px;
+                padding: 7px 12px;
+                background: #fff;
+                border: 1px solid #E5E7EB;
+                border-radius: 10px;
+                font-size: 13px; font-weight: 700;
+                color: #0F172A;
+                box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+                max-width: 100%;
             }
-            .pwa-info-icon {
-                width: 40px; height: 40px;
-                background: #fff; color: #0F172A;
-                border-radius: 12px;
+            .pwa-chip-icon {
                 display: inline-flex; align-items: center; justify-content: center;
                 flex-shrink: 0;
             }
-            .pwa-info-title { font-size: 13px; font-weight: 800; color: #0F172A; margin: 0 0 8px; }
-            .pwa-info-list { margin: 0; padding-left: 18px; font-size: 13px; color: #475569; line-height: 1.55; }
-            .pwa-info-list li { margin-bottom: 4px; }
+            .pwa-chip-label { white-space: normal; }
+            .pwa-chip-plus {
+                display: inline-flex; align-items: center; justify-content: center;
+                width: 22px; height: 22px;
+                background: #F1F5F9; color: #0F172A;
+                border: 1px solid #E5E7EB;
+                border-radius: 6px;
+                font-weight: 800; font-size: 14px; line-height: 1;
+            }
+            .pwa-chip-blue .pwa-chip-icon { color: #2563EB; }
+            .pwa-chip-neutral .pwa-chip-icon { color: #475569; }
+            .pwa-chip-ios-blue {
+                background: #007AFF; color: #fff; border-color: transparent;
+                padding: 7px 14px;
+            }
+            .pwa-chip-ios-blue .pwa-chip-icon { color: #fff; }
+
+            /* Mini-steps para variantes simples */
+            .pwa-info-list { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 18px; }
+            .pwa-mini-step {
+                display: flex; gap: 10px; align-items: flex-start;
+                background: #F8FAFC; border: 1px solid #EEF0F2;
+                border-radius: 12px; padding: 10px 12px;
+                font-size: 13px; color: #0F172A; line-height: 1.45;
+            }
+            .pwa-mini-step strong { font-weight: 800; }
+            .pwa-mini-num {
+                flex-shrink: 0;
+                width: 22px; height: 22px;
+                border-radius: 999px;
+                background: #0F172A; color: #fff;
+                font-size: 11px; font-weight: 800;
+                display: inline-flex; align-items: center; justify-content: center;
+                margin-top: 1px;
+            }
 
             .pwa-modal-actions {
                 display: flex; gap: 8px; flex-wrap: wrap;
