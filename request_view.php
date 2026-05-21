@@ -7,7 +7,7 @@ $isAdmin = canAccessArea($_SESSION['role'], 'admin');
 if (!$request_id) { header('Location: ' . getDashboardForRole($_SESSION['role'])); exit; }
 
 $stmt = $pdo->prepare("
-    SELECT r.*, s.title as service_title, s.type as service_type,
+    SELECT r.*, s.title as service_title, s.type as service_type, s.delivery_days, s.delivery_label, s.description as service_description,
            u.name as client_name, u.id as client_id, u.phone as client_phone
     FROM requests r
     JOIN services s ON r.service_id = s.id
@@ -183,10 +183,31 @@ include 'components/layout_start.php';
                     <?= getStatusBadge($request['status']) ?>
                 </div>
                 <h2 class="text-lg font-extrabold text-slate-900"><?= htmlspecialchars($request['service_title']) ?></h2>
-                <?php if ($request['period']): ?>
-                <p class="text-xs text-slate-500 mt-0.5">Periodo: <span class="font-semibold text-slate-700"><?= htmlspecialchars($request['period']) ?></span></p>
-                <?php elseif ($request['estimated_delivery_date']): ?>
-                <p class="text-xs text-slate-500 mt-0.5">Entrega: <span class="font-semibold text-slate-700"><?= date('d/m/Y', strtotime($request['estimated_delivery_date'])) ?></span></p>
+                <?php
+                $reqSvcInfo = ['delivery_label' => $request['delivery_label'] ?? null, 'delivery_days' => $request['delivery_days'] ?? null];
+                $reqDeliveryText = formatServiceDelivery($reqSvcInfo);
+                $isCompletedReq = in_array($request['status'], ['completado','presentado'], true);
+                $isOverdueReq = !$isCompletedReq && !empty($request['estimated_delivery_date']) && strtotime($request['estimated_delivery_date']) < strtotime('today');
+                ?>
+                <div class="mt-1 flex items-center gap-3 flex-wrap text-xs">
+                    <?php if ($request['period']): ?>
+                    <span class="text-slate-500">Periodo: <span class="font-semibold text-slate-700"><?= htmlspecialchars($request['period']) ?></span></span>
+                    <?php endif; ?>
+                    <?php if ($request['estimated_delivery_date']): ?>
+                    <span class="text-slate-500">
+                        <?= $isCompletedReq ? 'Entregado el' : ($isOverdueReq ? '<span class="text-red-600 font-bold">Retrasado · Estimado</span>' : 'Entrega estimada') ?>:
+                        <span class="font-semibold <?= $isOverdueReq && !$isCompletedReq ? 'text-red-600' : 'text-slate-800' ?>"><?= date('d/m/Y', strtotime($request['estimated_delivery_date'])) ?></span>
+                    </span>
+                    <?php endif; ?>
+                    <?php if ($reqDeliveryText !== '' && $request['service_type'] !== 'iguala'): ?>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        SLA: <?= htmlspecialchars($reqDeliveryText) ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
+                <?php if (!empty($request['service_description'])): ?>
+                <p class="mt-2 text-xs text-slate-600 leading-relaxed"><?= nl2br(htmlspecialchars($request['service_description'])) ?></p>
                 <?php endif; ?>
             </div>
         </div>

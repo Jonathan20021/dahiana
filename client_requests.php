@@ -17,7 +17,7 @@ if ($filter === 'active') {
 $whereSql = implode(' AND ', $where);
 
 $stmt = $pdo->prepare("
-    SELECT r.*, s.title as service_title, s.type as service_type,
+    SELECT r.*, s.title as service_title, s.type as service_type, s.delivery_days, s.delivery_label, s.description as service_description,
            (SELECT COUNT(*) FROM request_comments WHERE request_id = r.id) as comment_count,
            (SELECT COUNT(*) FROM request_attachments WHERE request_id = r.id) as attachment_count,
            (SELECT MAX(created_at) FROM request_comments WHERE request_id = r.id) as last_message_at
@@ -137,6 +137,11 @@ include 'components/layout_start.php';
         $period = $r['period'] ? '· ' . $r['period'] : '';
         $eta = $r['estimated_delivery_date'] ? date('d M Y', strtotime($r['estimated_delivery_date'])) : '';
         $lastMsg = $r['last_message_at'] ? date('d M, H:i', strtotime($r['last_message_at'])) : null;
+        // Tiempo de entrega: usar el label/days del servicio
+        $svcInfo = ['delivery_label' => $r['delivery_label'] ?? null, 'delivery_days' => $r['delivery_days'] ?? null];
+        $deliveryText = formatServiceDelivery($svcInfo);
+        // Si esta vencido (estimated < hoy y no completado)
+        $isOverdue = !$isCompleted && $eta && strtotime($r['estimated_delivery_date']) < strtotime('today');
     ?>
     <a href="request_view.php?id=<?= (int)$r['id'] ?>" class="cr-card cr-card-<?= $color ?>">
         <div class="cr-card-icon cr-icon-<?= $color ?>">
@@ -151,11 +156,22 @@ include 'components/layout_start.php';
                 <?php else: ?>
                 <span class="cr-tag">Puntual</span>
                 <?php endif; ?>
+                <?php if ($deliveryText !== '' && $r['service_type'] !== 'iguala'): ?>
+                <span class="cr-tag cr-tag-eta">
+                    <svg class="w-2.5 h-2.5 inline-block -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <?= htmlspecialchars($deliveryText) ?>
+                </span>
+                <?php endif; ?>
             </div>
             <p class="cr-card-meta">
                 Creado <?= date('d M Y', strtotime($r['created_at'])) ?>
                 <?= $period ?>
-                <?php if ($eta): ?>· Entrega estimada <?= $eta ?><?php endif; ?>
+                <?php if ($eta && !$isCompleted): ?>
+                · Entrega estimada <span class="<?= $isOverdue ? 'text-red-600 font-bold' : 'font-semibold text-slate-700' ?>"><?= $eta ?></span>
+                <?php if ($isOverdue): ?><span class="text-[10px] text-red-600 ml-1">(retrasada)</span><?php endif; ?>
+                <?php elseif ($eta && $isCompleted): ?>
+                · Entregada el <?= $eta ?>
+                <?php endif; ?>
             </p>
             <!-- Progreso -->
             <div class="cr-progress">
@@ -220,7 +236,8 @@ include 'components/layout_start.php';
     .cr-status-emerald { background: #F0FDF4; color: #15803D; }
     .cr-status-slate   { background: #F1F5F9; color: #475569; }
 
-    .cr-tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; background: #F1F5F9; color: #475569; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .cr-tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; background: #F1F5F9; color: #475569; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .cr-tag-eta { background: #EFF6FF; color: #2563EB; text-transform: none; letter-spacing: 0; }
 
     .cr-progress { height: 4px; background: #F1F5F9; border-radius: 999px; overflow: hidden; margin-top: 10px; }
     .cr-progress-bar { height: 100%; border-radius: 999px; transition: width .6s ease; }

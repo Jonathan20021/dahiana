@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 // Bootstrap tabla de mensajes generales (idempotente)
 $pdo->exec("
@@ -41,10 +42,17 @@ $clientsStmt = $pdo->query("
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role='admin' THEN 'admin' ELSE 'client' END)='client'
+      AND " . clientScopeWhere('u.id') . "
     ORDER BY (last_at IS NULL) ASC, last_at DESC, u.name ASC
     LIMIT 200
 ");
 $clients = $clientsStmt->fetchAll();
+
+// Si el usuario abrio un cliente sin permiso, redirigir
+if ($selectedClient > 0 && !clientAccessibleByUser($selectedClient)) {
+    header('Location: admin_messages.php');
+    exit;
+}
 
 // Si no hay cliente seleccionado, agarrar el primero con mensajes
 if (!$selectedClient && !empty($clients)) {
@@ -78,7 +86,8 @@ if ($selectedClient) {
     }
 }
 
-$totalUnread = (int)$pdo->query("SELECT COUNT(DISTINCT client_id) FROM general_messages WHERE read_by_admin=0 AND user_id IN (SELECT id FROM users WHERE id<>" . $admin_id . ")")->fetchColumn();
+$scopeMsg = clientScopeWhere('client_id');
+$totalUnread = (int)$pdo->query("SELECT COUNT(DISTINCT client_id) FROM general_messages WHERE read_by_admin=0 AND user_id IN (SELECT id FROM users WHERE id<>" . $admin_id . ") AND {$scopeMsg}")->fetchColumn();
 
 $page_title = 'Mensajes';
 $page_subtitle = 'Chat directo con cada cliente del portal.';

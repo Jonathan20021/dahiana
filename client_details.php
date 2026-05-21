@@ -1,9 +1,16 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+// Necesita poder ver clientes para acceder a esta ficha
+requirePermission('clients.view');
 
 $client_id = $_GET['id'] ?? null;
 if (!$client_id) { header('Location: admin_clients.php'); exit; }
+// Verificar que el cliente este asignado al usuario actual (si tiene scope)
+if (!clientAccessibleByUser((int)$client_id)) {
+    header('Location: admin_clients.php?denied=1');
+    exit;
+}
 
 $success = $error = null;
 
@@ -75,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     } elseif ($action === 'add_request') {
         $service_id = $_POST['service_id'];
-        $svc_stmt = $pdo->prepare("SELECT type, title FROM services WHERE id = ?");
+        $svc_stmt = $pdo->prepare("SELECT type, title, delivery_days FROM services WHERE id = ?");
         $svc_stmt->execute([$service_id]);
         $service = $svc_stmt->fetch();
         if ($service['type'] === 'iguala') {
@@ -83,9 +90,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("INSERT INTO requests (client_id, service_id, status, period) VALUES (?, ?, 'pendiente', ?)")
                 ->execute([$client_id, $service_id, $period]);
         } else {
-            $estimated_date = $_POST['estimated_date'] ?? null;
+            // Usar fecha manual si la dieron; si no, calcular desde delivery_days del servicio
+            $estimated_date = trim($_POST['estimated_date'] ?? '');
+            if ($estimated_date === '' && !empty($service['delivery_days'])) {
+                $estimated_date = calcDeliveryDate((int)$service['delivery_days']);
+            }
             $pdo->prepare("INSERT INTO requests (client_id, service_id, status, estimated_delivery_date) VALUES (?, ?, 'pendiente', ?)")
-                ->execute([$client_id, $service_id, $estimated_date]);
+                ->execute([$client_id, $service_id, $estimated_date ?: null]);
         }
         $newReqId = $pdo->lastInsertId();
         logClientActivity($client_id, 'request', "Servicio asignado: {$service['title']}");

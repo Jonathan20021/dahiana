@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 $success = $error = null;
 
@@ -74,6 +75,7 @@ $filter  = $_GET['filter'] ?? 'all';
 $whereSql = "
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND " . clientScopeWhere('u.id') . "
 ";
 $params = [];
 if ($q !== '') {
@@ -124,6 +126,7 @@ $globalStats = $pdo->query("
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND " . clientScopeWhere('u.id') . "
 ")->fetch();
 
 $pendingGlobal = $pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pendiente'")->fetchColumn();

@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 $success = null;
 $error = null;

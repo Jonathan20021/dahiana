@@ -365,7 +365,7 @@ function renderField($field, $catalog, $isReq, $taxRegimes, $operationTypes) {
                                 <?php foreach ($byType['iguala'] as $s):
                                     $checked = is_array($_POST['services'] ?? null) && in_array((string)$s['id'], $_POST['services'], true);
                                 ?>
-                                <label class="service-chip cursor-pointer flex items-center gap-3 px-4 py-3 rounded-2xl border-1.5 border-stone-200 bg-white hover:border-slate-400">
+                                <label class="service-chip cursor-pointer flex items-center gap-3 px-4 py-3 rounded-2xl border-1.5 border-stone-200 bg-white hover:border-slate-400" <?= $s['description'] ? 'title="' . htmlspecialchars($s['description']) . '"' : '' ?>>
                                     <input type="checkbox" name="services[]" value="<?= $s['id'] ?>" class="hidden" <?= $checked ? 'checked' : '' ?>>
                                     <div class="svc-check">
                                         <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -389,15 +389,18 @@ function renderField($field, $catalog, $isReq, $taxRegimes, $operationTypes) {
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <?php foreach ($byType['puntual'] as $s):
                                     $checked = is_array($_POST['services'] ?? null) && in_array((string)$s['id'], $_POST['services'], true);
+                                    $svcDelivery = formatServiceDelivery($s);
                                 ?>
-                                <label class="service-chip cursor-pointer flex items-center gap-3 px-4 py-3 rounded-2xl border-1.5 border-stone-200 bg-white hover:border-slate-400">
+                                <label class="service-chip cursor-pointer flex items-center gap-3 px-4 py-3 rounded-2xl border-1.5 border-stone-200 bg-white hover:border-slate-400" <?= $s['description'] ? 'title="' . htmlspecialchars($s['description']) . '"' : '' ?>>
                                     <input type="checkbox" name="services[]" value="<?= $s['id'] ?>" class="hidden" <?= $checked ? 'checked' : '' ?>>
                                     <div class="svc-check">
                                         <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                                     </div>
                                     <div class="flex-1 min-w-0">
                                         <p class="text-sm font-bold leading-tight"><?= htmlspecialchars($s['title']) ?></p>
-                                        <p class="text-[10px] svc-meta text-slate-400 mt-0.5">Una sola vez</p>
+                                        <p class="text-[10px] svc-meta text-slate-400 mt-0.5">
+                                            <?= $svcDelivery !== '' ? 'Entrega ' . htmlspecialchars($svcDelivery) : 'Una sola vez' ?>
+                                        </p>
                                     </div>
                                 </label>
                                 <?php endforeach; ?>

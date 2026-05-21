@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 $success = $error = null;
 
@@ -87,7 +88,7 @@ $periodFilter = $_GET['period'] ?? '';
 $range = $_GET['range'] ?? 'upcoming';
 $showDismissed = isset($_GET['dismissed']) && $_GET['dismissed'] === '1';
 
-$where = "WHERE 1=1";
+$where = "WHERE 1=1 AND " . clientScopeWhere('o.client_id');
 $params = [];
 
 // Por defecto ocultar eliminadas

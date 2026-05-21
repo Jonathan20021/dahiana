@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
     $request_id = $_POST['request_id'];
@@ -11,9 +12,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 $filter = $_GET['status'] ?? 'all';
-$where = '';
+$scopeR = clientScopeWhere('r.client_id');
+$where = "WHERE {$scopeR}";
 if (in_array($filter, ['pendiente','en_proceso','en_revision','presentado','completado'], true)) {
-    $where = "WHERE r.status = " . $pdo->quote($filter);
+    $where .= " AND r.status = " . $pdo->quote($filter);
 }
 
 $stmt = $pdo->query("
@@ -26,8 +28,8 @@ $stmt = $pdo->query("
 ");
 $requests = $stmt->fetchAll();
 
-// Counters for tabs
-$counters = $pdo->query("SELECT status, COUNT(*) c FROM requests GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
+// Counters for tabs (con scope)
+$counters = $pdo->query("SELECT status, COUNT(*) c FROM requests r WHERE {$scopeR} GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
 $totalAll = array_sum($counters);
 
 function getRequestStatusText($status) {

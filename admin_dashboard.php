@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 // El alta de clientes se hace desde admin_clients.php (form completo con perfil fiscal).
 // Aqui solo dejamos el dashboard mostrar metricas.
 
@@ -65,6 +66,7 @@ $alertCounts = $pdo->query("
     WHERE dismissed_at IS NULL
 ")->fetch();
 
+$scopeDash = clientScopeWhere('o.client_id');
 $upcomingObligations = $pdo->query("
     SELECT o.id, o.obligation_type, o.period, o.due_date, o.status, u.name AS client_name, o.client_id
     FROM tax_obligations o
@@ -72,6 +74,7 @@ $upcomingObligations = $pdo->query("
     WHERE o.status IN ('pendiente','vencido')
       AND o.dismissed_at IS NULL
       AND o.due_date <= DATE_ADD(CURDATE(), INTERVAL 14 DAY)
+      AND {$scopeDash}
     ORDER BY o.due_date ASC
     LIMIT 8
 ")->fetchAll();

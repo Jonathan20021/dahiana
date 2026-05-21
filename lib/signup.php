@@ -129,7 +129,7 @@ function signupVisibleServices() {
     global $pdo;
     $rawHidden = getSetting('signup_hidden_services', '[]');
     $hiddenIds = json_decode($rawHidden, true) ?: [];
-    $stmt = $pdo->query("SELECT id, title, type FROM services ORDER BY type, title");
+    $stmt = $pdo->query("SELECT id, title, type, delivery_days, delivery_label, description FROM services WHERE COALESCE(is_active, 1) = 1 ORDER BY type, title");
     $list = $stmt->fetchAll();
     return array_values(array_filter($list, fn($s) => !in_array((int)$s['id'], array_map('intval', $hiddenIds), true)));
 }
@@ -234,7 +234,7 @@ function signupApproveUser($userId, $approverId = null) {
         ->execute([$approverId, $userId]);
 
     // Convertir servicios solicitados en requests
-    $req = $pdo->prepare("SELECT s.id AS service_id, s.type, s.title, r.period, r.estimated_date FROM signup_requested_services r JOIN services s ON s.id = r.service_id WHERE r.user_id = ?");
+    $req = $pdo->prepare("SELECT s.id AS service_id, s.type, s.title, s.delivery_days, r.period, r.estimated_date FROM signup_requested_services r JOIN services s ON s.id = r.service_id WHERE r.user_id = ?");
     $req->execute([$userId]);
     $created = 0;
     foreach ($req->fetchAll() as $rs) {
@@ -243,7 +243,11 @@ function signupApproveUser($userId, $approverId = null) {
             $pdo->prepare("INSERT INTO requests (client_id, service_id, status, period) VALUES (?, ?, 'pendiente', ?)")
                 ->execute([$userId, $rs['service_id'], $period]);
         } else {
+            // Auto-calcular fecha estimada desde delivery_days si no la dieron
             $est = $rs['estimated_date'] ?: null;
+            if (!$est && !empty($rs['delivery_days']) && function_exists('calcDeliveryDate')) {
+                $est = calcDeliveryDate((int)$rs['delivery_days']);
+            }
             $pdo->prepare("INSERT INTO requests (client_id, service_id, status, estimated_delivery_date) VALUES (?, ?, 'pendiente', ?)")
                 ->execute([$userId, $rs['service_id'], $est]);
         }

@@ -70,6 +70,35 @@ function bootstrapAccessControlSchema() {
             $accessLevel = $normalizedSlug === 'admin' ? 'admin' : 'client';
             $insertRole->execute([$roleName, $normalizedSlug, $accessLevel]);
         }
+
+        // === RBAC: tabla de permisos por rol ===
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS role_permissions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                role_slug VARCHAR(100) NOT NULL,
+                permission_key VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_role_perm (role_slug, permission_key),
+                INDEX idx_role (role_slug)
+            )
+        ");
+
+        // === RBAC: asignacion de clientes a usuarios staff (scoping) ===
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS user_client_assignments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                client_id INT NOT NULL,
+                assigned_by INT DEFAULT NULL,
+                assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_assignment (user_id, client_id),
+                INDEX idx_user (user_id),
+                INDEX idx_client (client_id)
+            )
+        ");
+
+        // Garantizar que el rol 'admin' tenga TODOS los permisos (siembra automatica)
+        // Lo hacemos lazy desde getRolePermissions() para evitar dependencia de permissionsCatalog aqui.
     } catch (PDOException $e) {
         // Ignore bootstrap errors to keep the app usable if the schema already changed manually.
     }
@@ -322,12 +351,64 @@ function bootstrapCrmSchema() {
         foreach ($defaults as $k => $v) {
             $seed->execute([$k, $v]);
         }
+
+        // === Servicios: agregar tiempo de entrega + descripcion (idempotente) ===
+        $svcCols = $pdo->query("
+            SELECT COLUMN_NAME FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'services'
+        ")->fetchAll(PDO::FETCH_COLUMN);
+        $svcCols = array_map('strtolower', $svcCols);
+        if (!in_array('delivery_days', $svcCols, true)) {
+            try { $pdo->exec("ALTER TABLE services ADD COLUMN delivery_days INT DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+        if (!in_array('delivery_label', $svcCols, true)) {
+            try { $pdo->exec("ALTER TABLE services ADD COLUMN delivery_label VARCHAR(120) DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+        if (!in_array('description', $svcCols, true)) {
+            try { $pdo->exec("ALTER TABLE services ADD COLUMN description TEXT DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+        if (!in_array('is_active', $svcCols, true)) {
+            try { $pdo->exec("ALTER TABLE services ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1"); } catch (PDOException $e) {}
+        }
     } catch (PDOException $e) {
         // Ignore - keep app usable
     }
 }
 
 bootstrapCrmSchema();
+
+/**
+ * Devuelve un texto legible del tiempo de entrega de un servicio.
+ * - Si tiene delivery_label, lo usa tal cual.
+ * - Si solo tiene delivery_days, genera "X dia(s) habil(es)" o "X-Y dias habiles".
+ * - Si no tiene nada, devuelve string vacio.
+ */
+function formatServiceDelivery($service) {
+    if (!$service) return '';
+    $label = trim((string)($service['delivery_label'] ?? ''));
+    if ($label !== '') return $label;
+    $days = (int)($service['delivery_days'] ?? 0);
+    if ($days <= 0) return '';
+    if ($days === 1) return '1 dia habil';
+    return $days . ' dias habiles';
+}
+
+/**
+ * Calcula una fecha estimada de entrega sumando dias habiles a hoy.
+ * Simple: lunes-viernes (sin festivos locales).
+ */
+function calcDeliveryDate($days, $from = null) {
+    $days = (int)$days;
+    if ($days <= 0) return null;
+    $ts = $from ? strtotime($from) : time();
+    $added = 0;
+    while ($added < $days) {
+        $ts = strtotime('+1 day', $ts);
+        $dow = (int)date('N', $ts); // 1=Mon, 7=Sun
+        if ($dow < 6) $added++;
+    }
+    return date('Y-m-d', $ts);
+}
 
 function logClientActivity($clientId, $kind, $summary, $meta = null) {
     global $pdo;
@@ -711,6 +792,264 @@ function getRoleAccessLevel($slug) {
 
 function canAccessArea($roleSlug, $requiredArea) {
     return getRoleAccessLevel($roleSlug) === $requiredArea;
+}
+
+// =========================================================================
+// RBAC: permisos granulares por modulo + scoping de clientes a usuarios
+// =========================================================================
+
+/**
+ * Catalogo maestro de permisos disponibles en la app.
+ * Agrupados por categoria para la UI. La key es lo que se guarda en BD.
+ */
+function permissionsCatalog() {
+    return [
+        'Vista general' => [
+            'dashboard.view'        => ['label' => 'Ver Vista 360',                 'page' => 'admin_dashboard.php'],
+            'messages.view'         => ['label' => 'Ver y enviar mensajes',         'page' => 'admin_messages.php'],
+            'documents.view'        => ['label' => 'Ver documentos compartidos',    'page' => 'admin_documents.php'],
+            'documents.write'       => ['label' => 'Subir / eliminar documentos',   'page' => null],
+        ],
+        'Clientes y solicitudes' => [
+            'clients.view'          => ['label' => 'Ver clientes',                  'page' => 'admin_clients.php'],
+            'clients.write'         => ['label' => 'Crear / editar clientes',       'page' => null],
+            'approvals.manage'      => ['label' => 'Aprobar registros publicos',    'page' => 'admin_approvals.php'],
+            'requests.view'         => ['label' => 'Ver solicitudes / tramites',    'page' => 'admin_requests.php'],
+            'requests.write'        => ['label' => 'Editar estado de tramites',     'page' => null],
+        ],
+        'Fiscal DGII' => [
+            'tax_calendar.view'     => ['label' => 'Calendario fiscal',             'page' => 'admin_tax_calendar.php'],
+            'tax_filings.view'      => ['label' => 'Formularios 606/607/IT-1',      'page' => 'admin_tax_filings.php'],
+            'invoice_review.view'   => ['label' => 'Ver facturas IA',               'page' => 'admin_invoice_review.php'],
+            'invoice_review.approve'=> ['label' => 'Aprobar/rechazar facturas IA',  'page' => null],
+            'telegram.debug'        => ['label' => 'Diagnostico Telegram',          'page' => 'admin_telegram_debug.php'],
+        ],
+        'Finanzas' => [
+            'finances.view'         => ['label' => 'Ver volantes de cobro',         'page' => 'admin_finances.php'],
+            'finances.write'        => ['label' => 'Crear / cobrar volantes',       'page' => null],
+            'igualas.manage'        => ['label' => 'Gestionar igualas',             'page' => 'admin_igualas.php'],
+        ],
+        'Configuracion del portal' => [
+            'services.manage'       => ['label' => 'Servicios',                     'page' => 'admin_services.php'],
+            'users.manage'          => ['label' => 'Usuarios del staff',            'page' => 'admin_users.php'],
+            'roles.manage'          => ['label' => 'Roles y permisos',              'page' => 'admin_roles.php'],
+            'signup_settings.manage'=> ['label' => 'Form de registro publico',      'page' => 'admin_signup_settings.php'],
+            'settings.manage'       => ['label' => 'Configuracion general',         'page' => 'admin_settings.php'],
+        ],
+    ];
+}
+
+/**
+ * Lista plana de todas las keys de permisos.
+ */
+function allPermissionKeys() {
+    $out = [];
+    foreach (permissionsCatalog() as $cat => $perms) {
+        foreach ($perms as $key => $meta) $out[] = $key;
+    }
+    return $out;
+}
+
+/**
+ * Mapeo pagina => permiso requerido (derivado del catalogo).
+ */
+function pagePermissionMap() {
+    static $map = null;
+    if ($map !== null) return $map;
+    $map = [];
+    foreach (permissionsCatalog() as $cat => $perms) {
+        foreach ($perms as $key => $meta) {
+            if (!empty($meta['page'])) {
+                $map[$meta['page']] = $key;
+            }
+        }
+    }
+    return $map;
+}
+
+/**
+ * Devuelve la lista de permisos asignados a un rol.
+ * El rol 'admin' siempre devuelve TODOS los permisos (bypass).
+ */
+function getRolePermissions($roleSlug, $forceRefresh = false) {
+    global $pdo;
+    static $cache = [];
+    if (!$forceRefresh && isset($cache[$roleSlug])) return $cache[$roleSlug];
+
+    // 'admin' bypass: siempre todos los permisos
+    if ($roleSlug === 'admin') {
+        $cache[$roleSlug] = allPermissionKeys();
+        return $cache[$roleSlug];
+    }
+
+    try {
+        $stmt = $pdo->prepare("SELECT permission_key FROM role_permissions WHERE role_slug=?");
+        $stmt->execute([$roleSlug]);
+        $cache[$roleSlug] = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException $e) {
+        $cache[$roleSlug] = [];
+    }
+    return $cache[$roleSlug];
+}
+
+/**
+ * Reemplaza la lista de permisos de un rol.
+ * El rol 'admin' es inmutable (siempre todos).
+ */
+function setRolePermissions($roleSlug, array $permKeys) {
+    global $pdo;
+    if ($roleSlug === 'admin') return false; // no editable
+    $valid = allPermissionKeys();
+    $permKeys = array_values(array_intersect($permKeys, $valid));
+
+    $pdo->prepare("DELETE FROM role_permissions WHERE role_slug=?")->execute([$roleSlug]);
+    if (!empty($permKeys)) {
+        $ins = $pdo->prepare("INSERT IGNORE INTO role_permissions (role_slug, permission_key) VALUES (?,?)");
+        foreach ($permKeys as $k) $ins->execute([$roleSlug, $k]);
+    }
+    return true;
+}
+
+/**
+ * Comprueba si un usuario tiene un permiso especifico.
+ * Por defecto usa el rol del usuario en sesion.
+ */
+function userHasPermission($permKey, $userId = null) {
+    if ($userId === null) {
+        $roleSlug = $_SESSION['role'] ?? '';
+    } else {
+        global $pdo;
+        $stmt = $pdo->prepare("SELECT role FROM users WHERE id=?");
+        $stmt->execute([$userId]);
+        $roleSlug = (string)$stmt->fetchColumn();
+    }
+    if ($roleSlug === '') return false;
+    $perms = getRolePermissions($roleSlug);
+    return in_array($permKey, $perms, true);
+}
+
+/** Helper corto. */
+function currentUserHasPermission($permKey) {
+    return userHasPermission($permKey);
+}
+
+/**
+ * Aborta la pagina con redireccion si el usuario actual no tiene el permiso.
+ */
+function requirePermission($permKey) {
+    if (!isset($_SESSION['user_id'])) {
+        header('Location: login.php');
+        exit;
+    }
+    if (currentUserHasPermission($permKey)) return;
+    // Sin permiso: redirigir al primer modulo disponible o mostrar denied
+    $first = firstAccessiblePage();
+    if ($first && basename($_SERVER['PHP_SELF']) !== $first) {
+        header('Location: ' . $first . '?denied=' . urlencode($permKey));
+        exit;
+    }
+    http_response_code(403);
+    echo '<div style="font-family:system-ui;padding:40px;text-align:center"><h1>Acceso denegado</h1><p>Tu rol no tiene permiso para abrir este modulo.</p><a href="admin_dashboard.php">Volver</a></div>';
+    exit;
+}
+
+/**
+ * Guarda automatico basado en la pagina actual (lee el mapa).
+ * Solo aplica a paginas admin_*.php (que requieren acceso admin de todos modos).
+ */
+function requirePagePermission() {
+    $page = basename($_SERVER['PHP_SELF'] ?? '');
+    $map = pagePermissionMap();
+    if (isset($map[$page])) {
+        requirePermission($map[$page]);
+    }
+}
+
+/**
+ * Devuelve la primera pagina admin a la que el usuario actual tiene acceso.
+ * Util para redirigir despues de login o cuando no tiene permiso de la pagina pedida.
+ */
+function firstAccessiblePage() {
+    $map = pagePermissionMap();
+    foreach ($map as $page => $perm) {
+        if (currentUserHasPermission($perm)) return $page;
+    }
+    return null;
+}
+
+// -------------------------------------------------------------------------
+// Scoping de clientes a usuarios staff
+// -------------------------------------------------------------------------
+
+/**
+ * Devuelve los IDs de clientes asignados a un usuario.
+ * Reglas:
+ *  - Si el usuario es 'admin' o el rol tiene assignment scope='all' -> null (significa TODOS).
+ *  - Si no tiene asignaciones -> [] (no ve a nadie).
+ *  - Si tiene asignaciones -> array de ids.
+ *
+ * El admin SIEMPRE ve todo. Para roles staff, si NO tienen asignaciones,
+ * tampoco ven nada (zero-trust: hay que asignarles clientes explicitamente).
+ */
+function getAssignedClientIds($userId = null) {
+    global $pdo;
+    if ($userId === null) $userId = (int)($_SESSION['user_id'] ?? 0);
+    if ($userId <= 0) return [];
+
+    // admin role -> sin restriccion (null)
+    $roleSlug = ($userId === (int)($_SESSION['user_id'] ?? 0))
+        ? ($_SESSION['role'] ?? '')
+        : (string)$pdo->query("SELECT role FROM users WHERE id={$userId}")->fetchColumn();
+    if ($roleSlug === 'admin') return null;
+    if ($roleSlug === 'client') return [$userId]; // cliente solo se ve a si mismo
+
+    $stmt = $pdo->prepare("SELECT client_id FROM user_client_assignments WHERE user_id=?");
+    $stmt->execute([$userId]);
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * True si el usuario staff actual puede ver/manipular al cliente dado.
+ * El admin siempre puede.
+ */
+function clientAccessibleByUser($clientId, $userId = null) {
+    $allowed = getAssignedClientIds($userId);
+    if ($allowed === null) return true;
+    return in_array((int)$clientId, $allowed, true);
+}
+
+/**
+ * Devuelve un fragmento SQL para WHERE que limita por client_id segun asignaciones.
+ * Ejemplo de uso:
+ *   $where[] = clientScopeWhere('u.id');  // o 'i.client_id'
+ *   $sql .= ' WHERE ' . implode(' AND ', $where);
+ *
+ * Si el usuario es admin: devuelve "1=1" (sin filtro).
+ * Si no tiene asignaciones: devuelve "0=1" (cero filas).
+ * Si tiene asignaciones: devuelve "alias IN (1,2,3)".
+ */
+function clientScopeWhere($columnExpr, $userId = null) {
+    $allowed = getAssignedClientIds($userId);
+    if ($allowed === null) return '1=1';
+    if (empty($allowed)) return '0=1';
+    $ids = array_map('intval', $allowed);
+    return "{$columnExpr} IN (" . implode(',', $ids) . ")";
+}
+
+/**
+ * Asigna una lista de clientes a un usuario staff (reemplaza la lista anterior).
+ */
+function setUserClientAssignments($userId, array $clientIds, $assignedBy = null) {
+    global $pdo;
+    if ($assignedBy === null) $assignedBy = (int)($_SESSION['user_id'] ?? 0);
+    $pdo->prepare("DELETE FROM user_client_assignments WHERE user_id=?")->execute([$userId]);
+    if (!empty($clientIds)) {
+        $ins = $pdo->prepare("INSERT IGNORE INTO user_client_assignments (user_id, client_id, assigned_by) VALUES (?,?,?)");
+        foreach ($clientIds as $cid) {
+            $cid = (int)$cid;
+            if ($cid > 0) $ins->execute([$userId, $cid, $assignedBy]);
+        }
+    }
 }
 
 function getDashboardForRole($roleSlug) {

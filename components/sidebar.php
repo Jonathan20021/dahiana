@@ -83,6 +83,26 @@ $sidebarGroupsClient = [
 ];
 
 $groups = $isAdmin ? $sidebarGroupsAdmin : $sidebarGroupsClient;
+
+// === Filtrado por permisos (solo aplica al lado admin) ===
+if ($isAdmin) {
+    $permMap = pagePermissionMap();
+    $filteredGroups = [];
+    foreach ($groups as $groupName => $items) {
+        $allowed = [];
+        foreach ($items as $item) {
+            $pageName = $item['url'];
+            $perm = $permMap[$pageName] ?? null;
+            if ($perm === null || currentUserHasPermission($perm)) {
+                $allowed[] = $item;
+            }
+        }
+        if (!empty($allowed)) {
+            $filteredGroups[$groupName] = $allowed;
+        }
+    }
+    $groups = $filteredGroups;
+}
 $whatsappSupport = trim(getSetting('company_phone', ''));
 ?>
 <aside id="appSidebar"

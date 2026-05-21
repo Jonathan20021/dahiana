@@ -16,6 +16,7 @@ $items = [];
 $unread = 0;
 
 if ($isAdmin) {
+    $scopeN = clientScopeWhere('client_id');
     // 1. Aprobaciones publicas pendientes
     try {
         $pendApprovals = signupPendingCount();
@@ -33,7 +34,7 @@ if ($isAdmin) {
 
     // 2. Facturas IA por revisar
     try {
-        $stmt = $pdo->query("SELECT COUNT(*) FROM invoice_uploads WHERE status = 'extracted'");
+        $stmt = $pdo->query("SELECT COUNT(*) FROM invoice_uploads WHERE status = 'extracted' AND {$scopeN}");
         $pendInv = (int)$stmt->fetchColumn();
         if ($pendInv > 0) {
             $items[] = [
@@ -49,7 +50,7 @@ if ($isAdmin) {
 
     // 3. Obligaciones vencidas
     try {
-        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status = 'vencido' AND dismissed_at IS NULL");
+        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status = 'vencido' AND dismissed_at IS NULL AND {$scopeN}");
         $overdue = (int)$stmt->fetchColumn();
         if ($overdue > 0) {
             $items[] = [
@@ -65,7 +66,7 @@ if ($isAdmin) {
 
     // 4. Obligaciones que vencen esta semana
     try {
-        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status='pendiente' AND dismissed_at IS NULL AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        $stmt = $pdo->query("SELECT COUNT(*) FROM tax_obligations WHERE status='pendiente' AND dismissed_at IS NULL AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND {$scopeN}");
         $week = (int)$stmt->fetchColumn();
         if ($week > 0) {
             $items[] = [
@@ -80,7 +81,7 @@ if ($isAdmin) {
 
     // 5. Volantes vencidos
     try {
-        $stmt = $pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pendiente' AND due_date < CURDATE()");
+        $stmt = $pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pendiente' AND due_date < CURDATE() AND {$scopeN}");
         $invOver = (int)$stmt->fetchColumn();
         if ($invOver > 0) {
             $items[] = [

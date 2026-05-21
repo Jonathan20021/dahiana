@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 $success = $error = null;
 
@@ -59,7 +60,7 @@ $filterClient = (int)($_GET['client'] ?? 0);
 $filterRange  = $_GET['range'] ?? 'all';
 $search       = trim($_GET['q'] ?? '');
 
-$where = ['1=1'];
+$where = ['1=1', clientScopeWhere('i.client_id')];
 $params = [];
 if (in_array($filterStatus, ['pendiente','pagado','vencido'], true)) {
     if ($filterStatus === 'vencido') {
@@ -80,14 +81,15 @@ if ($search !== '') {
 }
 $whereSql = implode(' AND ', $where);
 
-// KPIs (globales, sin filtro de la lista)
-$totalPending = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pendiente'")->fetchColumn();
-$totalPaid    = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pagado'")->fetchColumn();
-$totalOverdue = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pendiente' AND due_date < CURDATE()")->fetchColumn();
-$countPending = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pendiente'")->fetchColumn();
-$countPaid    = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pagado'")->fetchColumn();
-$countOverdue = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pendiente' AND due_date < CURDATE()")->fetchColumn();
-$paidThisMonth = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pagado' AND paid_at >= DATE_FORMAT(CURDATE(),'%Y-%m-01')")->fetchColumn();
+// KPIs (respetando scope de clientes del usuario actual)
+$scopeKpi = clientScopeWhere('client_id');
+$totalPending = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pendiente' AND {$scopeKpi}")->fetchColumn();
+$totalPaid    = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pagado' AND {$scopeKpi}")->fetchColumn();
+$totalOverdue = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pendiente' AND due_date < CURDATE() AND {$scopeKpi}")->fetchColumn();
+$countPending = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pendiente' AND {$scopeKpi}")->fetchColumn();
+$countPaid    = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pagado' AND {$scopeKpi}")->fetchColumn();
+$countOverdue = (int)$pdo->query("SELECT COUNT(*) FROM invoices WHERE status='pendiente' AND due_date < CURDATE() AND {$scopeKpi}")->fetchColumn();
+$paidThisMonth = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='pagado' AND paid_at >= DATE_FORMAT(CURDATE(),'%Y-%m-01') AND {$scopeKpi}")->fetchColumn();
 
 // Tendencia ultimos 6 meses
 $trend = $pdo->query("

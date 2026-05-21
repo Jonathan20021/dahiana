@@ -24,7 +24,7 @@ $periodLabel = $months[(int)substr($period, 5, 2) - 1] . ' ' . substr($period, 0
 
 // Requests (igualas + puntuales)
 $stmt = $pdo->prepare("
-    SELECT r.*, s.title, s.type
+    SELECT r.*, s.title, s.type, s.delivery_days, s.delivery_label
     FROM requests r
     JOIN services s ON r.service_id = s.id
     WHERE r.client_id = ?

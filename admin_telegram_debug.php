@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 $LOG_FILE = __DIR__ . '/uploads/logs/telegram.log';
 

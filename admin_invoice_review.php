@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 $success = $error = null;
 
@@ -211,7 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Filters builder
-$where = "1=1";
+$where = "1=1 AND " . clientScopeWhere('u.client_id');
 $params = [];
 
 if ($filterStatus === 'pending') {

@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 requireAuth('admin');
+requirePagePermission();
 
 $pdo->exec("
     CREATE TABLE IF NOT EXISTS client_documents (
@@ -43,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($clientId <= 0) {
             $error = 'Selecciona un cliente.';
+        } elseif (!clientAccessibleByUser($clientId)) {
+            $error = 'No tienes permiso para gestionar a este cliente.';
         } elseif (empty($_FILES['file']['name'])) {
             $error = 'Selecciona un archivo.';
         } elseif ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
@@ -89,9 +92,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $filterClient = (int)($_GET['client'] ?? 0);
 $filterCat = $_GET['cat'] ?? 'all';
 
-$where = ['1=1'];
+$where = ['1=1', clientScopeWhere('cd.client_id')];
 $params = [];
-if ($filterClient > 0) { $where[] = 'cd.client_id = ?'; $params[] = $filterClient; }
+if ($filterClient > 0) {
+    if (!clientAccessibleByUser($filterClient)) {
+        header('Location: admin_documents.php');
+        exit;
+    }
+    $where[] = 'cd.client_id = ?'; $params[] = $filterClient;
+}
 if (isset($categories[$filterCat])) { $where[] = 'cd.category = ?'; $params[] = $filterCat; }
 $whereSql = implode(' AND ', $where);
 
@@ -111,6 +120,7 @@ $clients = $pdo->query("
     SELECT u.id, u.name FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role='admin' THEN 'admin' ELSE 'client' END)='client'
+      AND " . clientScopeWhere('u.id') . "
     ORDER BY u.name
 ")->fetchAll();
 
