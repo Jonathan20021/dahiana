@@ -862,7 +862,7 @@ include 'components/layout_start.php';
     .ir-checkbox span { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid #CBD5E1; display: inline-flex; align-items: center; justify-content: center; transition: all .15s ease; }
     .ir-checkbox input:checked + span { background: #0F172A; border-color: #0F172A; }
     .ir-checkbox input:checked + span::after { content: ''; width: 6px; height: 9px; border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg) translateY(-1px); }
-    .ir-menu { position: absolute; top: calc(100% + 4px); right: 0; min-width: 200px; background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; box-shadow: 0 10px 30px rgba(15,23,42,0.12); z-index: 30; padding: 6px; }
+    .ir-menu { position: fixed; min-width: 220px; background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; box-shadow: 0 18px 50px rgba(15,23,42,0.18); z-index: 9000; padding: 6px; }
     .ir-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; color: #475569; text-align: left; transition: all .12s ease; }
     .ir-menu-item:hover { background: #F4F4F5; color: #0F172A; }
     .ir-menu-item-danger { color: #DC2626; }
@@ -944,20 +944,45 @@ include 'components/layout_start.php';
         });
     });
 
-    // Dropdown menus
+    // Dropdown menus (position: fixed para escapar overflow del card)
+    function positionMenu(menu, trigger) {
+        const r = trigger.getBoundingClientRect();
+        const menuW = menu.offsetWidth || 220;
+        const menuH = menu.offsetHeight || 160;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        // Por defecto debajo del boton, alineado a su derecha
+        let top = r.bottom + 6;
+        let left = r.right - menuW;
+        // Si se sale por abajo, abrir hacia arriba
+        if (top + menuH > vh - 8) top = r.top - menuH - 6;
+        // Si se sale por la izquierda, alinear con el boton
+        if (left < 8) left = Math.max(8, r.left);
+        // Si se sale por la derecha
+        if (left + menuW > vw - 8) left = vw - menuW - 8;
+        menu.style.top = top + 'px';
+        menu.style.left = left + 'px';
+    }
+    function closeAllMenus() {
+        document.querySelectorAll('.ir-menu').forEach(m => m.classList.add('hidden'));
+    }
     document.querySelectorAll('.ir-menu-trigger').forEach(trigger => {
         trigger.addEventListener('click', (e) => {
             e.stopPropagation();
             const menuId = trigger.dataset.menu;
             const menu = document.getElementById(menuId);
             const wasOpen = !menu.classList.contains('hidden');
-            document.querySelectorAll('.ir-menu').forEach(m => m.classList.add('hidden'));
-            if (!wasOpen) menu.classList.remove('hidden');
+            closeAllMenus();
+            if (!wasOpen) {
+                menu.classList.remove('hidden');
+                positionMenu(menu, trigger);
+            }
         });
     });
-    document.addEventListener('click', () => {
-        document.querySelectorAll('.ir-menu').forEach(m => m.classList.add('hidden'));
-    });
+    document.addEventListener('click', closeAllMenus);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllMenus(); });
+    window.addEventListener('scroll', closeAllMenus, true);
+    window.addEventListener('resize', closeAllMenus);
     document.querySelectorAll('.ir-menu').forEach(m => {
         m.addEventListener('click', (e) => e.stopPropagation());
     });

@@ -439,20 +439,40 @@ include 'components/layout_start.php';
     }
     checks.forEach(c => c.addEventListener('change', refresh));
 
-    // Row menus
+    // Row menus (position: fixed para escapar overflow del card)
+    function positionTcMenu(menu, trigger) {
+        const r = trigger.getBoundingClientRect();
+        const menuW = menu.offsetWidth || 200;
+        const menuH = menu.offsetHeight || 120;
+        const vw = window.innerWidth, vh = window.innerHeight;
+        let top = r.bottom + 6;
+        let left = r.right - menuW;
+        if (top + menuH > vh - 8) top = r.top - menuH - 6;
+        if (left < 8) left = Math.max(8, r.left);
+        if (left + menuW > vw - 8) left = vw - menuW - 8;
+        menu.style.top = top + 'px';
+        menu.style.left = left + 'px';
+    }
+    function closeAllTcMenus() {
+        document.querySelectorAll('.tc-menu').forEach(m => m.classList.add('hidden'));
+    }
     document.querySelectorAll('.tc-menu-trigger').forEach(t => {
         t.addEventListener('click', e => {
             e.stopPropagation();
             const id = t.dataset.tcMenu;
             const m = document.getElementById(id);
             const wasOpen = !m.classList.contains('hidden');
-            document.querySelectorAll('.tc-menu').forEach(x => x.classList.add('hidden'));
-            if (!wasOpen) m.classList.remove('hidden');
+            closeAllTcMenus();
+            if (!wasOpen) {
+                m.classList.remove('hidden');
+                positionTcMenu(m, t);
+            }
         });
     });
-    document.addEventListener('click', () => {
-        document.querySelectorAll('.tc-menu').forEach(m => m.classList.add('hidden'));
-    });
+    document.addEventListener('click', closeAllTcMenus);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllTcMenus(); });
+    window.addEventListener('scroll', closeAllTcMenus, true);
+    window.addEventListener('resize', closeAllTcMenus);
     document.querySelectorAll('.tc-menu').forEach(m => m.addEventListener('click', e => e.stopPropagation()));
 })();
 </script>
@@ -526,7 +546,7 @@ include 'components/layout_start.php';
     .tc-icon-wa:hover { background: #DCFCE7; color: #15803D; }
 
     .tc-menu-wrap { position: relative; }
-    .tc-menu { position: absolute; top: calc(100% + 4px); right: 0; min-width: 180px; background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; box-shadow: 0 10px 30px rgba(15,23,42,0.12); z-index: 30; padding: 6px; }
+    .tc-menu { position: fixed; min-width: 200px; background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; box-shadow: 0 18px 50px rgba(15,23,42,0.18); z-index: 9000; padding: 6px; }
     .tc-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; color: #475569; text-align: left; transition: all .12s ease; }
     .tc-menu-item:hover { background: #F4F4F5; color: #0F172A; }
     .tc-menu-item-danger { color: #DC2626; }
