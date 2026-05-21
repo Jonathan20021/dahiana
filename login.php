@@ -55,6 +55,10 @@ $companySlogan   = trim(getSetting('company_slogan', 'Tu asesoria financiera a u
     </style>
 </head>
 <body class="min-h-full">
+<button type="button" onclick="window.showInstallPrompt && window.showInstallPrompt()" class="pwa-install-trigger fixed top-4 right-4 z-50" title="Instalar app">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><polyline points="6 11 12 17 18 11"/><line x1="3" y1="21" x2="21" y2="21"/></svg>
+    <span class="hidden sm:inline">Instalar app</span>
+</button>
 <div class="min-h-screen p-3 sm:p-5 lg:p-6 flex items-center justify-center">
     <div class="shell w-full max-w-[1100px] overflow-hidden grid grid-cols-1 lg:grid-cols-5 min-h-[600px]">
 
