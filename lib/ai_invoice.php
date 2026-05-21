@@ -171,6 +171,20 @@ function bootstrapAiInvoiceSchema() {
         if (!in_array('payment_method', $rowCols, true)) {
             try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN payment_method VARCHAR(10) DEFAULT NULL"); } catch (PDOException $e) {}
         }
+        if (!in_array('other_taxes', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN other_taxes DECIMAL(15,2) DEFAULT 0"); } catch (PDOException $e) {}
+        }
+        if (!in_array('isc', $rowCols, true)) {
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN isc DECIMAL(15,2) DEFAULT 0"); } catch (PDOException $e) {}
+        }
+        if (!in_array('isr_retention_type', $rowCols, true)) {
+            // 01=alquileres, 02=honorarios, 03=otros
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN isr_retention_type VARCHAR(2) DEFAULT NULL"); } catch (PDOException $e) {}
+        }
+        if (!in_array('tipo_anulacion', $rowCols, true)) {
+            // 01-10 segun catalogo DGII 608
+            try { $pdo->exec("ALTER TABLE tax_filing_rows ADD COLUMN tipo_anulacion VARCHAR(2) DEFAULT NULL"); } catch (PDOException $e) {}
+        }
 
         // Seed AI + Telegram settings (idempotent)
         $defaults = [
@@ -247,6 +261,37 @@ function aiPaymentMethods() {
         '05' => 'Permuta',
         '06' => 'Nota de Credito',
         '07' => 'Mixto',
+    ];
+}
+
+/** Tipos de anulacion oficiales DGII para el 608 (col 3). */
+function aiCancellationTypes() {
+    return [
+        '01' => 'Deterioro de Factura Pre-Impresa',
+        '02' => 'Errores de Impresion (Factura Pre-Impresa)',
+        '03' => 'Impresion Defectuosa',
+        '04' => 'Duplicidad de Factura',
+        '05' => 'Correccion de la Informacion',
+        '06' => 'Cambio de Productos',
+        '07' => 'Devolucion de Productos',
+        '08' => 'Omision de Productos',
+        '09' => 'Errores en Secuencia de NCF',
+        '10' => 'Cese de Operaciones',
+        '11' => 'Perdida o Hurto de Talonarios',
+    ];
+}
+
+/** Tipos de retencion ISR oficiales DGII para el 606 (col 17). */
+function aiIsrRetentionTypes() {
+    return [
+        '01' => 'Alquileres',
+        '02' => 'Honorarios por Servicios',
+        '03' => 'Otras Retenciones',
+        '04' => 'Dividendos',
+        '05' => 'Intereses a Personas Juridicas',
+        '06' => 'Intereses a Personas Fisicas',
+        '07' => 'Retencion por Proveedores del Estado',
+        '08' => 'Juegos Telefonicos',
     ];
 }
 
@@ -1232,7 +1277,7 @@ function aiApproveExtraction($extractionId, $approverId = null) {
             identification_type=?, income_type=?, counterparty_name=?,
             payment_method=?, propina_legal=?, transporte=?,
             date_doc=?, date_payment=?, amount=?, itbis=?,
-            isr_retention=?, itbis_retention=?
+            isr_retention=?, itbis_retention=?, other_taxes=?
             WHERE id=?")
             ->execute([
                 $e['rnc'], $e['ncf'], $e['ncf_modified'], $taxType,
@@ -1243,6 +1288,7 @@ function aiApproveExtraction($extractionId, $approverId = null) {
                 (float)$e['propina_legal'], (float)$e['transporte'],
                 $e['date_doc'], $e['date_payment'],
                 $amount, (float)$e['itbis'], (float)$e['isr_retention'], (float)$e['itbis_retention'],
+                (float)($e['other_taxes'] ?? 0),
                 $e['filing_row_id'],
             ]);
         $rowId = (int)$e['filing_row_id'];
@@ -1251,8 +1297,8 @@ function aiApproveExtraction($extractionId, $approverId = null) {
             (filing_id, rnc, ncf, ncf_modified, tax_type,
              identification_type, income_type, counterparty_name,
              payment_method, propina_legal, transporte,
-             date_doc, date_payment, amount, itbis, isr_retention, itbis_retention)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+             date_doc, date_payment, amount, itbis, isr_retention, itbis_retention, other_taxes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
             ->execute([
                 $filingId,
                 $e['rnc'], $e['ncf'], $e['ncf_modified'], $taxType,
@@ -1263,6 +1309,7 @@ function aiApproveExtraction($extractionId, $approverId = null) {
                 (float)$e['propina_legal'], (float)$e['transporte'],
                 $e['date_doc'], $e['date_payment'],
                 $amount, (float)$e['itbis'], (float)$e['isr_retention'], (float)$e['itbis_retention'],
+                (float)($e['other_taxes'] ?? 0),
             ]);
         $rowId = (int)$pdo->lastInsertId();
     }

@@ -113,7 +113,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $filing->execute([$selectedClient, $type, $period]);
         $fid = $filing->fetchColumn();
         if ($fid) {
-            $pdo->prepare("INSERT INTO tax_filing_rows (filing_id, rnc, ncf, ncf_modified, tax_type, date_doc, date_payment, amount, itbis, isr_retention, itbis_retention) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            $pdo->prepare("INSERT INTO tax_filing_rows
+                (filing_id, rnc, ncf, ncf_modified, tax_type,
+                 date_doc, date_payment, amount, itbis,
+                 isr_retention, itbis_retention, isr_retention_type,
+                 propina_legal, other_taxes, isc, payment_method,
+                 identification_type, income_type, tipo_anulacion)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
                 ->execute([
                     $fid,
                     trim($_POST['rnc'] ?? ''),
@@ -126,6 +132,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (float)($_POST['itbis'] ?? 0),
                     (float)($_POST['isr_retention'] ?? 0),
                     (float)($_POST['itbis_retention'] ?? 0),
+                    ($_POST['isr_retention_type'] ?? '') ?: null,
+                    (float)($_POST['propina_legal'] ?? 0),
+                    (float)($_POST['other_taxes'] ?? 0),
+                    (float)($_POST['isc'] ?? 0),
+                    ($_POST['payment_method'] ?? '') ?: null,
+                    ($_POST['identification_type'] ?? '') ?: null,
+                    ($_POST['income_type'] ?? '') ?: null,
+                    ($_POST['tipo_anulacion'] ?? '') ?: null,
                 ]);
             // Recalculate totals
             $tots = $pdo->prepare("SELECT COUNT(*) c, COALESCE(SUM(amount),0) a, COALESCE(SUM(itbis),0) i FROM tax_filing_rows WHERE filing_id=?");
@@ -460,17 +474,27 @@ $it1Composition = $it1Rows->fetchAll();
             <div>
                 <label class="field-label">Tipo bien/servicio</label>
                 <select name="tax_type" class="field !text-sm">
-                    <option value="01">01 - Gastos de Personal</option>
-                    <option value="02">02 - Gastos por Trabajos, Suministros y Servicios</option>
-                    <option value="03">03 - Arrendamientos</option>
-                    <option value="04">04 - Gastos de Activos Fijos</option>
-                    <option value="05">05 - Gastos de Representacion</option>
-                    <option value="06">06 - Otras Deducciones Admitidas</option>
-                    <option value="07">07 - Gastos Financieros</option>
-                    <option value="08">08 - Gastos Extraordinarios</option>
-                    <option value="09" selected>09 - Compras y Gastos del Periodo</option>
-                    <option value="10">10 - Adquisiciones de Activos</option>
-                    <option value="11">11 - Gastos de Seguros</option>
+                    <?php foreach (aiExpenseCategories() as $code => $label): ?>
+                    <option value="<?= $code ?>" <?= $code === '09' ? 'selected' : '' ?>><?= $code ?> - <?= htmlspecialchars($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php elseif ($type === '607'): ?>
+            <div>
+                <label class="field-label">Tipo ingreso</label>
+                <select name="income_type" class="field !text-sm">
+                    <?php foreach (aiIncomeTypes() as $code => $label): ?>
+                    <option value="<?= $code ?>" <?= $code === '01' ? 'selected' : '' ?>><?= $code ?> - <?= htmlspecialchars($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php elseif ($type === '608'): ?>
+            <div>
+                <label class="field-label">Tipo de anulacion</label>
+                <select name="tipo_anulacion" class="field !text-sm">
+                    <?php foreach (aiCancellationTypes() as $code => $label): ?>
+                    <option value="<?= $code ?>" <?= $code === '02' ? 'selected' : '' ?>><?= $code ?> - <?= htmlspecialchars($label) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
             <?php endif; ?>
@@ -488,6 +512,42 @@ $it1Composition = $it1Rows->fetchAll();
                     <label class="field-label">ITBIS</label>
                     <input type="number" step="0.01" name="itbis" class="field !text-sm" value="0">
                 </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="field-label">Ret. ITBIS</label>
+                    <input type="number" step="0.01" name="itbis_retention" class="field !text-sm" value="0">
+                </div>
+                <div>
+                    <label class="field-label">Ret. ISR</label>
+                    <input type="number" step="0.01" name="isr_retention" class="field !text-sm" value="0">
+                </div>
+            </div>
+            <?php if ($type === '606'): ?>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="field-label">Propina legal</label>
+                    <input type="number" step="0.01" name="propina_legal" class="field !text-sm" value="0">
+                </div>
+                <div>
+                    <label class="field-label">Tipo Ret. ISR</label>
+                    <select name="isr_retention_type" class="field !text-sm">
+                        <option value="">(automatico)</option>
+                        <?php foreach (aiIsrRetentionTypes() as $code => $label): ?>
+                        <option value="<?= $code ?>"><?= $code ?> - <?= htmlspecialchars($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <?php endif; ?>
+            <div>
+                <label class="field-label">Forma de pago</label>
+                <select name="payment_method" class="field !text-sm">
+                    <option value="">(no especificada)</option>
+                    <?php foreach (aiPaymentMethods() as $code => $label): ?>
+                    <option value="<?= $code ?>"><?= $code ?> - <?= htmlspecialchars($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <?php endif; ?>
             <button type="submit" class="btn-dark text-sm w-full mt-2">Agregar</button>

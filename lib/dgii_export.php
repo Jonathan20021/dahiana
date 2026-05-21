@@ -112,17 +112,20 @@ function dgiiTxt606($filing) {
         $itbis     = (float)$r['itbis'];
         $itbisRet  = (float)$r['itbis_retention'];
         $isrRet    = (float)$r['isr_retention'];
+        $isc       = (float)($r['isc'] ?? 0);
+        $otros     = (float)($r['other_taxes'] ?? 0);
         $propina   = (float)($r['propina_legal'] ?? 0);
         $isService = dgiiIsService($tipoBien);
 
-        // Col 15: ITBIS por adelantar (lo que se puede deducir) = facturado - retenido
+        // Col 15: ITBIS por adelantar (lo deducible) = facturado - retenido
         $itbisAdelantar = max(0, $itbis - $itbisRet);
 
-        // Col 17/18: tipo y monto de retencion ISR.
-        // Solo se llena cuando hay retencion. 01=alquileres, 02=honorarios, 03=otros.
+        // Col 17: tipo de retencion ISR (catalogo 01-08). Si la fila lo trae lo usamos;
+        // si no, inferimos por tipo bien: tipo 03 = alquileres, resto = honorarios.
         $tipoRetIsr = '';
         if ($isrRet > 0.005) {
-            $tipoRetIsr = ($tipoBien === '03') ? '01' : '02';
+            $tipoRetIsr = ($r['isr_retention_type'] ?? '')
+                ?: (($tipoBien === '03') ? '01' : '02');
         }
 
         // Forma de pago: viene del extractor IA (codigos DGII 01-07).
@@ -148,8 +151,8 @@ function dgiiTxt606($filing) {
             $tipoRetIsr,                                   // 17 Tipo retencion ISR
             dgiiTrimNum($isrRet),                          // 18 Monto retencion renta
             '',                                            // 19 ISR percibido en compras
-            '',                                            // 20 Impuesto selectivo al consumo
-            '',                                            // 21 Otros impuestos / tasas
+            dgiiTrimNum($isc),                             // 20 Impuesto selectivo al consumo
+            dgiiTrimNum($otros),                           // 21 Otros impuestos / tasas
             dgiiTrimNum($propina),                         // 22 Propina legal
             $formaPago,                                    // 23 Forma de pago
         ];
@@ -159,24 +162,56 @@ function dgiiTxt606($filing) {
 }
 
 /**
- * Formato 607 (Ventas de Bienes y Servicios).
- * Columnas oficiales:
- *  1. RNC/Cedula comprador
- *  2. Tipo identificacion (1/2/3)
+ * Mapea el codigo de forma de pago (payment_method 01-07) a la columna del
+ * 607 donde se debe acumular el monto facturado. Devuelve el indice 1-based
+ * (17..23) o null si no aplica.
+ *  17. Efectivo                        (01)
+ *  18. Cheque/Transferencia/Deposito   (02)
+ *  19. Tarjeta Credito/Debito          (03)
+ *  20. Venta a Credito                 (04)
+ *  21. Bonos o Certificados de Regalo  (06 nota de credito y similares)
+ *  22. Permuta                         (05)
+ *  23. Otras Formas de Venta           (07 mixto / no especificado)
+ */
+function dgii607PaymentCol($paymentMethod) {
+    switch ((string)$paymentMethod) {
+        case '01': return 17;
+        case '02': return 18;
+        case '03': return 19;
+        case '04': return 20;
+        case '05': return 22;
+        case '06': return 21;
+        case '07': return 23;
+        default:   return null;
+    }
+}
+
+/**
+ * Formato 607 (Ventas de Bienes y Servicios) - 23 columnas oficiales DGII.
+ *  1. RNC, Cedula o ID Tributaria (cliente)
+ *  2. Tipo Identificacion (1=RNC, 2=Cedula, 3=Pasaporte)
  *  3. NCF
- *  4. NCF modificado
- *  5. Tipo ingreso (01-06)
- *  6. Fecha comprobante YYYYMMDD
- *  7. Fecha retencion YYYYMMDD
- *  8. Monto facturado
- *  9. ITBIS facturado
- * 10. ITBIS retenido por terceros
- * 11. ITBIS percibido
- * 12. Retencion renta por terceros
- * 13. ISR percibido
- * 14. Impuesto selectivo al consumo
- * 15. Otros impuestos / tasas
- * 16. Monto propina legal
+ *  4. NCF Modificado
+ *  5. Tipo Ingreso (01-06)
+ *  6. Fecha Comprobante (YYYYMMDD)
+ *  7. Fecha Retencion (YYYYMMDD)
+ *  8. Monto Facturado
+ *  9. ITBIS Facturado
+ * 10. ITBIS Retenido por Terceros
+ * 11. ITBIS Percibido
+ * 12. Retencion Renta por Terceros
+ * 13. ISR Percibido por Terceros
+ * 14. Impuesto Selectivo al Consumo (ISC)
+ * 15. Otros Impuestos / Tasas
+ * 16. Monto Propina Legal
+ * 17. Efectivo
+ * 18. Cheque / Transferencia / Deposito
+ * 19. Tarjeta Debito / Credito
+ * 20. Venta a Credito
+ * 21. Bonos o Certificados de Regalo
+ * 22. Permuta
+ * 23. Otras Formas de Venta
+ * Las columnas 17-23 deben sumar exactamente el Monto Facturado (col 8).
  */
 function dgiiTxt607($filing) {
     $rncClient = dgiiDigits($filing['rnc'] ?? '');
@@ -195,15 +230,42 @@ function dgiiTxt607($filing) {
         $tipoIng   = !empty($r['income_type']) ? $r['income_type'] : '01';
         $fechaDoc  = dgiiDate($r['date_doc']);
         $fechaRet  = dgiiDate($r['date_payment']);
-        $monto     = dgiiNum($r['amount']);
-        $itbis     = dgiiNum($r['itbis']);
-        $itbisRet  = dgiiNum($r['itbis_retention']);
-        $isrRet    = dgiiNum($r['isr_retention']);
+
+        $monto     = (float)$r['amount'];
+        $itbis     = (float)$r['itbis'];
+        $itbisRet  = (float)$r['itbis_retention'];
+        $isrRet    = (float)$r['isr_retention'];
+        $isc       = (float)($r['isc'] ?? 0);
+        $otros     = (float)($r['other_taxes'] ?? 0);
+        $propina   = (float)($r['propina_legal'] ?? 0);
+
+        // Desglose por forma de pago: el monto total cae en la columna correspondiente.
+        $payCols = ['','','','','','','']; // 17..23
+        $payIdx  = dgii607PaymentCol($r['payment_method'] ?? '');
+        if ($payIdx !== null && $monto > 0) {
+            $payCols[$payIdx - 17] = dgiiTrimNum($monto, false);
+        }
 
         $cols = [
-            $rnc, $tipoId, $ncf, $ncfMod, $tipoIng,
-            $fechaDoc, $fechaRet,
-            $monto, $itbis, $itbisRet, '0.00', $isrRet, '0.00', '0.00', '0.00', '0.00',
+            $rnc,                                          //  1
+            $tipoId,                                       //  2
+            $ncf,                                          //  3
+            $ncfMod,                                       //  4
+            $tipoIng,                                      //  5
+            $fechaDoc,                                     //  6
+            $fechaRet,                                     //  7
+            dgiiTrimNum($monto, false),                    //  8 monto facturado (siempre)
+            dgiiTrimNum($itbis, false),                    //  9 ITBIS facturado (siempre)
+            dgiiTrimNum($itbisRet),                        // 10 ITBIS retenido por terceros
+            '',                                            // 11 ITBIS percibido (no aplica)
+            dgiiTrimNum($isrRet),                          // 12 retencion renta por terceros
+            '',                                            // 13 ISR percibido
+            dgiiTrimNum($isc),                             // 14 ISC
+            dgiiTrimNum($otros),                           // 15 otros impuestos
+            dgiiTrimNum($propina),                         // 16 propina legal
+            $payCols[0], $payCols[1], $payCols[2],         // 17-19
+            $payCols[3], $payCols[4], $payCols[5],         // 20-22
+            $payCols[6],                                   // 23
         ];
         $lines[] = implode('|', $cols);
     }
@@ -211,11 +273,10 @@ function dgiiTxt607($filing) {
 }
 
 /**
- * Formato 608 (NCF Anulados).
- * Columnas:
+ * Formato 608 (NCF Anulados) - 3 columnas oficiales DGII.
  *  1. NCF
- *  2. Fecha comprobante YYYYMMDD
- *  3. Tipo anulacion (01-09)
+ *  2. Fecha Comprobante (YYYYMMDD)
+ *  3. Tipo Anulacion (catalogo 01-11)
  */
 function dgiiTxt608($filing) {
     $rncClient = dgiiDigits($filing['rnc'] ?? '');
@@ -224,7 +285,13 @@ function dgiiTxt608($filing) {
     $lines     = [];
     $lines[] = "608|{$rncClient}|{$period}|" . count($rows);
     foreach ($rows as $r) {
-        $cols = [dgiiUpper($r['ncf']), dgiiDate($r['date_doc']), '02'];
+        // Si la fila tiene tipo_anulacion lo usamos; si no, default '02' (errores de impresion).
+        $tipo = $r['tipo_anulacion'] ?? '';
+        if ($tipo === '' || $tipo === null) {
+            // En filas viejas el catalogo viajaba en tax_type. Aceptamos esa convencion.
+            $tipo = ($r['tax_type'] ?? '') ?: '02';
+        }
+        $cols = [dgiiUpper($r['ncf']), dgiiDate($r['date_doc']), $tipo];
         $lines[] = implode('|', $cols);
     }
     return implode("\r\n", $lines) . "\r\n";
@@ -279,7 +346,32 @@ function dgiiExcelHeader606() {
     ];
 }
 function dgiiExcelHeader607() {
-    return ['Fecha','RNC/Cedula Cliente','Tipo ID','NCF','NCF Modificado','Tipo Ingreso','Fecha Retencion','Monto Facturado','ITBIS','Ret. ITBIS Terceros','Ret. ISR Terceros'];
+    // 23 columnas oficiales del formato DGII 607.
+    return [
+        'RNC / Cedula Cliente',
+        'Tipo Id',
+        'NCF',
+        'NCF Modificado',
+        'Tipo Ingreso',
+        'Fecha Comprobante',
+        'Fecha Retencion',
+        'Monto Facturado',
+        'ITBIS Facturado',
+        'ITBIS Retenido por Terceros',
+        'ITBIS Percibido',
+        'Retencion Renta por Terceros',
+        'ISR Percibido',
+        'Impuesto Selectivo al Consumo',
+        'Otros Impuestos/Tasas',
+        'Monto Propina Legal',
+        'Efectivo',
+        'Cheque/Transferencia/Deposito',
+        'Tarjeta Debito/Credito',
+        'Venta a Credito',
+        'Bonos o Certificados de Regalo',
+        'Permuta',
+        'Otras Formas de Venta',
+    ];
 }
 function dgiiExcelHeader608() {
     return ['NCF Anulado','Fecha Comprobante','Tipo Anulacion'];
@@ -298,12 +390,17 @@ function dgiiExcelRows606($filing) {
         $itbis    = (float)$r['itbis'];
         $itbisRet = (float)$r['itbis_retention'];
         $isrRet   = (float)$r['isr_retention'];
+        $isc      = (float)($r['isc'] ?? 0);
+        $otros    = (float)($r['other_taxes'] ?? 0);
         $propina  = (float)($r['propina_legal'] ?? 0);
         $isService = dgiiIsService($tipoBien);
         $itbisAdelantar = max(0, $itbis - $itbisRet);
 
         $tipoRetIsr = '';
-        if ($isrRet > 0.005) $tipoRetIsr = ($tipoBien === '03') ? '01' : '02';
+        if ($isrRet > 0.005) {
+            $tipoRetIsr = ($r['isr_retention_type'] ?? '')
+                ?: (($tipoBien === '03') ? '01' : '02');
+        }
 
         $out[] = [
             $rnc,                                                                       // 1
@@ -316,17 +413,17 @@ function dgiiExcelRows606($filing) {
             $isService ? dgiiTrimNum($amount) : '',                                     // 8
             $isService ? '' : dgiiTrimNum($amount),                                     // 9
             dgiiTrimNum($amount),                                                       // 10
-            dgiiTrimNum($itbis),                                                        // 11
+            dgiiTrimNum($itbis, false),                                                 // 11
             dgiiTrimNum($itbisRet),                                                     // 12
             '',                                                                         // 13
             '',                                                                         // 14
-            dgiiTrimNum($itbisAdelantar),                                               // 15
+            dgiiTrimNum($itbisAdelantar, false),                                        // 15
             '',                                                                         // 16
             $tipoRetIsr,                                                                // 17
             dgiiTrimNum($isrRet),                                                       // 18
             '',                                                                         // 19
-            '',                                                                         // 20
-            '',                                                                         // 21
+            dgiiTrimNum($isc),                                                          // 20
+            dgiiTrimNum($otros),                                                        // 21
             dgiiTrimNum($propina),                                                      // 22
             $r['payment_method'] ?? '',                                                 // 23
         ];
@@ -336,29 +433,61 @@ function dgiiExcelRows606($filing) {
 function dgiiExcelRows607($filing) {
     $out = [];
     foreach ($filing['rows'] as $r) {
-        $rnc = dgiiDigits($r['rnc']);
-        $tipoId = $rnc === '' ? '' : (strlen($rnc) === 11 ? 'Cedula' : 'RNC');
+        $rnc    = dgiiDigits($r['rnc']);
+        $tipoId = ($r['identification_type'] ?? '') !== ''
+                  ? $r['identification_type']
+                  : ($rnc === '' ? '' : (strlen($rnc) === 11 ? '2' : '1'));
+        $tipoIng = !empty($r['income_type']) ? $r['income_type'] : '01';
+
+        $amount   = (float)$r['amount'];
+        $itbis    = (float)$r['itbis'];
+        $itbisRet = (float)$r['itbis_retention'];
+        $isrRet   = (float)$r['isr_retention'];
+        $isc      = (float)($r['isc'] ?? 0);
+        $otros    = (float)($r['other_taxes'] ?? 0);
+        $propina  = (float)($r['propina_legal'] ?? 0);
+
+        $payCols = ['','','','','','',''];
+        $payIdx  = dgii607PaymentCol($r['payment_method'] ?? '');
+        if ($payIdx !== null && $amount > 0) {
+            $payCols[$payIdx - 17] = dgiiTrimNum($amount, false);
+        }
+
         $out[] = [
-            $r['date_doc'] ? date('d/m/Y', strtotime($r['date_doc'])) : '',
-            $rnc, $tipoId,
-            dgiiUpper($r['ncf']), dgiiUpper($r['ncf_modified']),
-            '01',
-            $r['date_payment'] ? date('d/m/Y', strtotime($r['date_payment'])) : '',
-            number_format((float)$r['amount'], 2, '.', ','),
-            number_format((float)$r['itbis'], 2, '.', ','),
-            number_format((float)$r['itbis_retention'], 2, '.', ','),
-            number_format((float)$r['isr_retention'], 2, '.', ','),
+            $rnc,                                                                       //  1
+            $tipoId,                                                                    //  2
+            dgiiUpper($r['ncf']),                                                       //  3
+            dgiiUpper($r['ncf_modified']),                                              //  4
+            $tipoIng,                                                                   //  5
+            dgiiDate($r['date_doc']),                                                   //  6
+            dgiiDate($r['date_payment']),                                               //  7
+            dgiiTrimNum($amount, false),                                                //  8
+            dgiiTrimNum($itbis, false),                                                 //  9
+            dgiiTrimNum($itbisRet),                                                     // 10
+            '',                                                                         // 11
+            dgiiTrimNum($isrRet),                                                       // 12
+            '',                                                                         // 13
+            dgiiTrimNum($isc),                                                          // 14
+            dgiiTrimNum($otros),                                                        // 15
+            dgiiTrimNum($propina),                                                      // 16
+            $payCols[0], $payCols[1], $payCols[2],                                      // 17-19
+            $payCols[3], $payCols[4], $payCols[5],                                      // 20-22
+            $payCols[6],                                                                // 23
         ];
     }
     return $out;
 }
 function dgiiExcelRows608($filing) {
+    $catalog = function_exists('aiCancellationTypes') ? aiCancellationTypes() : [];
     $out = [];
     foreach ($filing['rows'] as $r) {
+        $tipo = $r['tipo_anulacion'] ?? '';
+        if ($tipo === '' || $tipo === null) $tipo = ($r['tax_type'] ?? '') ?: '02';
+        $label = isset($catalog[$tipo]) ? "{$tipo} - {$catalog[$tipo]}" : $tipo;
         $out[] = [
             dgiiUpper($r['ncf']),
-            $r['date_doc'] ? date('d/m/Y', strtotime($r['date_doc'])) : '',
-            '02 - Errores de impresion',
+            dgiiDate($r['date_doc']),
+            $label,
         ];
     }
     return $out;
@@ -429,11 +558,11 @@ function dgiiExcelHtml($filing) {
             <tbody>
                 <?php
                     // Indices (0-based) que contienen montos en cada tipo:
-                    // 606: servicios, bienes, total, ITBIS, ITBIS retenido, ITBIS adelantar, monto ret renta, propina
-                    // 607: monto facturado, ITBIS, ITBIS retenido, ret. ISR
+                    // 606: servicios(7), bienes(8), total(9), ITBIS(10), ITBIS ret(11), ITBIS adelantar(14), ret. renta(17), ISC(19), otros(20), propina(21)
+                    // 607: monto(7), ITBIS(8), ITBIS ret(9), ret. renta(11), ISC(13), otros(14), propina(15), Efectivo..Otras(16..22)
                     $numIdx = $type === '606'
-                        ? [7,8,9,10,11,14,17,21]
-                        : ($type === '607' ? [7,8,9,10] : []);
+                        ? [7,8,9,10,11,14,17,19,20,21]
+                        : ($type === '607' ? [7,8,9,11,13,14,15,16,17,18,19,20,21,22] : []);
                 ?>
                 <?php foreach ($rows as $row): ?>
                 <tr>
@@ -470,7 +599,12 @@ function dgiiExcelHtml($filing) {
 }
 
 /**
- * IT-1 (resumen mensual de ITBIS) - vista ejecutiva.
+ * IT-1 (Declaracion Mensual de ITBIS) - resumen alineado con las casillas
+ * oficiales del formulario en Oficina Virtual DGII.
+ *  - I. Operaciones (Casillas 1-5)
+ *  - II. ITBIS en Ventas (Casilla 6)
+ *  - III. ITBIS en Compras (Casillas 7-9)
+ *  - IV. Liquidacion (Casillas 13-16, 23, 26, 29)
  */
 function dgiiExcelHtmlIT1($filing) {
     global $pdo;
@@ -482,22 +616,61 @@ function dgiiExcelHtmlIT1($filing) {
     $f606 = dgiiFetchFiling($clientId, '606', $period);
     $f607 = dgiiFetchFiling($clientId, '607', $period);
 
-    $itbisCompras = (float)($f606['total_itbis'] ?? 0);
-    $itbisVentas  = (float)($f607['total_itbis'] ?? 0);
-    $balance      = $itbisVentas - $itbisCompras;
+    // ---- Ventas (desde 607) ----
+    $totalOperaciones = 0.0; // C1
+    $opGravadas       = 0.0; // C2
+    $opExentas        = 0.0; // C3
+    $itbisCobrado     = 0.0; // C6
+    $itbisRetTerceros = 0.0; // C26 (ITBIS retenido por terceros en ventas)
+    if (!empty($f607['rows'])) {
+        foreach ($f607['rows'] as $r) {
+            $amt   = (float)$r['amount'];
+            $itb   = (float)$r['itbis'];
+            $itbR  = (float)$r['itbis_retention'];
+            $totalOperaciones += $amt;
+            if ($itb > 0.005) $opGravadas += $amt; else $opExentas += $amt;
+            $itbisCobrado     += $itb;
+            $itbisRetTerceros += $itbR;
+        }
+    }
+
+    // ---- Compras (desde 606) ----
+    $itbisPagado    = 0.0; // suma ITBIS facturado en compras
+    $itbisRetenido  = 0.0; // ITBIS retenido a proveedores
+    $itbisAdelantar = 0.0; // C7 - ITBIS deducible
+    if (!empty($f606['rows'])) {
+        foreach ($f606['rows'] as $r) {
+            $itb  = (float)$r['itbis'];
+            $itbR = (float)$r['itbis_retention'];
+            $itbisPagado    += $itb;
+            $itbisRetenido  += $itbR;
+            $itbisAdelantar += max(0, $itb - $itbR);
+        }
+    }
+
+    // ---- Liquidacion ----
+    // C13 ITBIS resultante = C6 - C7
+    $resultante = $itbisCobrado - $itbisAdelantar;
+    // C29 Saldo a pagar = C13 - C26 (ITBIS retenido por terceros nos lo descuentan)
+    $aPagar = $resultante - $itbisRetTerceros;
+    $esSaldoFavor = $aPagar < -0.005;
 
     $css = '
         <style>
             body { font-family: Arial, sans-serif; }
-            h1 { font-size: 16pt; color: #0F172A; }
-            h2 { font-size: 11pt; color: #475569; font-weight: normal; margin: 0 0 12pt 0; }
-            table { border-collapse: collapse; min-width: 600px; }
-            th { background: #0F172A; color: #fff; padding: 8px; font-size: 11pt; border: 1px solid #1E293B; text-align: left; }
-            td { padding: 8px 12px; font-size: 11pt; border: 1px solid #E5E7EB; }
+            h1 { font-size: 16pt; color: #0F172A; margin: 0 0 4pt 0; }
+            h2 { font-size: 11pt; color: #475569; font-weight: normal; margin: 0 0 16pt 0; }
+            h3 { font-size: 12pt; color: #0F172A; margin: 18pt 0 6pt 0; text-transform: uppercase; letter-spacing: 0.04em; }
+            table { border-collapse: collapse; width: 760px; }
+            th { background: #0F172A; color: #fff; padding: 8px 10px; font-size: 10pt; border: 1px solid #1E293B; text-align: left; }
+            td { padding: 7px 10px; font-size: 10pt; border: 1px solid #E5E7EB; }
+            .casilla { width: 70px; text-align: center; font-family: Consolas, monospace; color: #64748B; font-weight: bold; }
             .num { mso-number-format: "#,##0.00"; text-align: right; font-family: Consolas, monospace; }
-            .total td { background: #F4F4F5; font-weight: bold; font-size: 13pt; }
-            .pos { color: #15803D; }
-            .neg { color: #DC2626; }
+            .section td { background: #F1F5F9; font-weight: bold; color: #0F172A; }
+            .total td { background: #FEF3C7; font-weight: bold; font-size: 12pt; }
+            .pos { color: #047857; }
+            .neg { color: #B91C1C; }
+            .muted { color: #94A3B8; font-size: 9pt; }
         </style>
     ';
     ob_start();
@@ -510,23 +683,41 @@ function dgiiExcelHtmlIT1($filing) {
         <?= $css ?>
     </head>
     <body>
-        <h1>IT-1 - Declaracion Mensual de ITBIS</h1>
+        <h1>IT-1 &middot; Declaracion Mensual de ITBIS</h1>
         <h2><?= htmlspecialchars($client) ?> &middot; RNC <?= htmlspecialchars($rnc) ?> &middot; Periodo <?= htmlspecialchars($period) ?></h2>
+
         <table>
             <thead>
-                <tr><th>Concepto</th><th>Monto RD$</th></tr>
+                <tr><th>Casilla</th><th>Concepto</th><th>Monto RD$</th></tr>
             </thead>
             <tbody>
-                <tr><td>ITBIS facturado en ventas (606)</td><td class="num"><?= number_format($itbisVentas, 2, '.', ',') ?></td></tr>
-                <tr><td>ITBIS pagado en compras (607)</td><td class="num"><?= number_format($itbisCompras, 2, '.', ',') ?></td></tr>
+                <tr class="section"><td colspan="3">I. Operaciones (Ventas del periodo)</td></tr>
+                <tr><td class="casilla">1</td><td>Total Operaciones</td><td class="num"><?= number_format($totalOperaciones, 2, '.', ',') ?></td></tr>
+                <tr><td class="casilla">2</td><td>Operaciones Gravadas</td><td class="num"><?= number_format($opGravadas, 2, '.', ',') ?></td></tr>
+                <tr><td class="casilla">3</td><td>Operaciones Exentas</td><td class="num"><?= number_format($opExentas, 2, '.', ',') ?></td></tr>
+
+                <tr class="section"><td colspan="3">II. ITBIS Cobrado en Ventas</td></tr>
+                <tr><td class="casilla">6</td><td>ITBIS Facturado en Ventas (607)</td><td class="num"><?= number_format($itbisCobrado, 2, '.', ',') ?></td></tr>
+
+                <tr class="section"><td colspan="3">III. ITBIS en Compras</td></tr>
+                <tr><td class="casilla">7</td><td>ITBIS por Adelantar (606, deducible)</td><td class="num"><?= number_format($itbisAdelantar, 2, '.', ',') ?></td></tr>
+                <tr><td class="casilla">&mdash;</td><td><span class="muted">ITBIS Pagado Total en Compras</span></td><td class="num muted"><?= number_format($itbisPagado, 2, '.', ',') ?></td></tr>
+                <tr><td class="casilla">&mdash;</td><td><span class="muted">ITBIS Retenido a Proveedores</span></td><td class="num muted"><?= number_format($itbisRetenido, 2, '.', ',') ?></td></tr>
+
+                <tr class="section"><td colspan="3">IV. Liquidacion</td></tr>
+                <tr><td class="casilla">13</td><td>ITBIS Resultante (C6 &minus; C7)</td><td class="num"><?= number_format($resultante, 2, '.', ',') ?></td></tr>
+                <tr><td class="casilla">26</td><td>(&minus;) ITBIS Retenido por Terceros</td><td class="num"><?= number_format($itbisRetTerceros, 2, '.', ',') ?></td></tr>
                 <tr class="total">
-                    <td><?= $balance >= 0 ? 'ITBIS a pagar a DGII' : 'Saldo a favor del contribuyente' ?></td>
-                    <td class="num <?= $balance >= 0 ? 'neg' : 'pos' ?>"><?= number_format(abs($balance), 2, '.', ',') ?></td>
+                    <td class="casilla"><?= $esSaldoFavor ? '23' : '29' ?></td>
+                    <td><?= $esSaldoFavor ? 'Saldo a Favor del Contribuyente' : 'ITBIS a Pagar a DGII' ?></td>
+                    <td class="num <?= $esSaldoFavor ? 'pos' : 'neg' ?>"><?= number_format(abs($aPagar), 2, '.', ',') ?></td>
                 </tr>
             </tbody>
         </table>
+
         <p style="margin-top:16pt; font-size:9pt; color:#94a3b8">
-            Calculo automatico desde formularios 606 y 607 del periodo. Para presentar a DGII usa la plataforma oficial Oficina Virtual.
+            Calculo automatico a partir de los formularios 606 y 607 del periodo. Las casillas hacen referencia al formulario IT-1 oficial de DGII.
+            Para presentar el IT-1, ingresa estos valores en la Oficina Virtual antes del dia 20 del mes siguiente.
         </p>
     </body>
     </html>
