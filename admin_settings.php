@@ -81,7 +81,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'teleg
             'secret_token'         => $secret,
             'drop_pending_updates' => 'true',
             'allowed_updates'      => json_encode(['message','edited_message','callback_query']),
-            'max_connections'      => 40,
+            // max_connections=1 evita que Telegram abra varias conexiones en paralelo
+            // contra el webhook. En shared hosting con limite de "Entry Processes"
+            // (cPanel/LiteSpeed) eso disparaba 409 Conflict en las conexiones extra.
+            // Como el endpoint ahora cierra en <300ms, Telegram igual puede
+            // entregar ~5-10 updates/s.
+            'max_connections'      => 1,
         ]);
         if ($res['ok']) {
             $info = tgGetMe();
