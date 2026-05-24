@@ -11,11 +11,22 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/lib/telegram_handlers.php';
 
 if (!$isCli) {
-    if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
-        if (!function_exists('canAccessArea') || !canAccessArea($_SESSION['role'] ?? '', 'admin')) {
-            http_response_code(403);
-            exit('Forbidden');
-        }
+    // Acceso permitido si:
+    //  (a) hay sesion admin valida, O
+    //  (b) viene con el cron_token correcto (para servicios externos tipo
+    //      cron-job.org cuando el cron de cPanel no esta disponible).
+    $providedToken = $_GET['token'] ?? $_SERVER['HTTP_X_CRON_TOKEN'] ?? '';
+    $expectedToken = trim(getSetting('telegram_cron_token', ''));
+    $tokenOk = ($expectedToken !== '' && $providedToken !== '' && hash_equals($expectedToken, $providedToken));
+
+    $sessionOk = isset($_SESSION['user_id']) && (
+        ($_SESSION['role'] ?? '') === 'admin' ||
+        (function_exists('canAccessArea') && canAccessArea($_SESSION['role'] ?? '', 'admin'))
+    );
+
+    if (!$tokenOk && !$sessionOk) {
+        http_response_code(403);
+        exit('Forbidden');
     }
     header('Content-Type: text/plain; charset=utf-8');
 }
