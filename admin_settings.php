@@ -74,14 +74,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'teleg
         $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
         $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
         $url   = $proto . '://' . $host . rtrim($scriptDir, '/') . '/telegram_webhook.php';
-        $res = tgSetWebhook($url, $secret);
+        // drop_pending_updates=true limpia updates atascados (origen del 409)
+        // y deja la cola en estado limpio para el webhook recien configurado.
+        $res = tgApi('setWebhook', [
+            'url'                  => $url,
+            'secret_token'         => $secret,
+            'drop_pending_updates' => 'true',
+            'allowed_updates'      => json_encode(['message','edited_message','callback_query']),
+            'max_connections'      => 40,
+        ]);
         if ($res['ok']) {
             $info = tgGetMe();
             if ($info['ok'] && !empty($info['result']['username'])) {
                 $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_bot_username', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)")->execute([$info['result']['username']]);
-                clearSettingsCache();
             }
-            $success = 'Webhook conectado en ' . $url;
+            // Cambiar modo a 'webhook' para que el cron de telegram_poll.php NO
+            // borre este webhook ni compita con getUpdates (causa raiz del 409 Conflict).
+            $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_mode', 'webhook') ON DUPLICATE KEY UPDATE setting_value='webhook'")->execute();
+            clearSettingsCache();
+            $success = 'Webhook conectado en ' . $url . ' (modo: webhook, polling desactivado)';
         } else {
             $error = 'No se pudo conectar el webhook: ' . $res['error'];
         }
@@ -89,9 +100,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'teleg
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'telegram_delete_webhook') {
-    $res = tgDeleteWebhook();
-    if ($res['ok']) { $success = 'Webhook desconectado.'; }
-    else { $error = 'Error: ' . $res['error']; }
+    // drop_pending_updates evita que mensajes viejos lleguen cuando se reactive otra via.
+    $res = tgApi('deleteWebhook', ['drop_pending_updates' => 'true']);
+    if ($res['ok']) {
+        // Volver a modo polling: el cron retomara getUpdates automaticamente.
+        $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_mode', 'poll') ON DUPLICATE KEY UPDATE setting_value='poll'")->execute();
+        clearSettingsCache();
+        $success = 'Webhook desconectado. Modo cambiado a polling (cron retomara).';
+    } else {
+        $error = 'Error: ' . $res['error'];
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'test_email') {

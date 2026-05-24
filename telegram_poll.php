@@ -72,9 +72,36 @@ if (!$cfg['enabled']) {
     exit;
 }
 
+// ============================================================
+// Modo: 'webhook' | 'poll' | 'auto' (default).
+//   - webhook -> el poll NO toca nada y se sale (deja webhook activo).
+//   - poll    -> el poll borra cualquier webhook y hace getUpdates.
+//   - auto    -> si hay webhook activo SIN error, lo respeta y se sale.
+//                Si no hay webhook (o esta roto) hace polling normal.
+// Esto evita el 409 Conflict tipico de tener webhook + getUpdates compitiendo.
+// ============================================================
+$mode = trim(getSetting('telegram_mode', 'auto'));
+if (!in_array($mode, ['webhook', 'poll', 'auto'], true)) $mode = 'auto';
+
+if ($mode === 'webhook') {
+    pollLog('Mode=webhook: exiting, cron no debe correr cuando el webhook esta activo.');
+    exit;
+}
+
 $wh = tgGetWebhookInfo();
-if (!empty($wh['ok']) && !empty($wh['result']['url'])) {
-    pollLog('Deleting active webhook to enable polling', ['url' => $wh['result']['url']]);
+$webhookUrl = $wh['ok'] ?? false ? trim((string)($wh['result']['url'] ?? '')) : '';
+
+if ($mode === 'auto' && $webhookUrl !== '') {
+    // Hay webhook configurado. NO lo borramos: el poll respeta el webhook.
+    // Si el webhook tiene un error real (rate-limit/host caido), el admin tiene
+    // que ir a admin_telegram_debug.php para reconectarlo o cambiar telegram_mode='poll'.
+    pollLog('Mode=auto: webhook activo detectado, no se hace polling', ['url' => $webhookUrl]);
+    exit;
+}
+
+// Modo poll explicito o auto sin webhook: borrar webhook si lo hay y arrancar polling.
+if ($webhookUrl !== '') {
+    pollLog('Deleting active webhook to enable polling', ['url' => $webhookUrl, 'mode' => $mode]);
     tgDeleteWebhook();
 }
 
