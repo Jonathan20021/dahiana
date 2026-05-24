@@ -46,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
     $hidden = array_values(array_map('intval', $hidden));
     $upsert->execute(['signup_hidden_services', json_encode($hidden)]);
 
+    clearSettingsCache();
     $success = 'Configuracion del registro publico guardada.';
 }
 

@@ -12,9 +12,17 @@ $totalClients = $pdo->query("
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
 ")->fetchColumn();
-$pendingRequests = $pdo->query("SELECT COUNT(*) FROM requests WHERE status='pendiente'")->fetchColumn();
-$inProcessRequests = $pdo->query("SELECT COUNT(*) FROM requests WHERE status='en_proceso'")->fetchColumn();
-$completedRequests = $pdo->query("SELECT COUNT(*) FROM requests WHERE status='completado' OR status='presentado'")->fetchColumn();
+// Una sola consulta consolidada en vez de 3 COUNT(*) separados.
+$reqAgg = $pdo->query("
+    SELECT
+        SUM(CASE WHEN status='pendiente'  THEN 1 ELSE 0 END) AS pendiente,
+        SUM(CASE WHEN status='en_proceso' THEN 1 ELSE 0 END) AS en_proceso,
+        SUM(CASE WHEN status IN ('completado','presentado') THEN 1 ELSE 0 END) AS done
+    FROM requests
+")->fetch() ?: ['pendiente'=>0,'en_proceso'=>0,'done'=>0];
+$pendingRequests   = (int)$reqAgg['pendiente'];
+$inProcessRequests = (int)$reqAgg['en_proceso'];
+$completedRequests = (int)$reqAgg['done'];
 
 // Status distribution
 $statusCounts = $pdo->query("SELECT status, COUNT(*) as count FROM requests GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
@@ -53,8 +61,8 @@ $recentActivity = $pdo->query("
     LIMIT 6
 ")->fetchAll();
 
-// Update overdue DGII obligations
-$pdo->exec("UPDATE tax_obligations SET status='vencido' WHERE status='pendiente' AND due_date < CURDATE()");
+// Nota: el UPDATE de vencidos lo hace cron_daily.php a las 7:30am.
+// Evitamos correrlo en cada carga del dashboard (era el query mas lento).
 
 // DGII alerts
 $alertCounts = $pdo->query("

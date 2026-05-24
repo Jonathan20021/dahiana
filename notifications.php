@@ -96,16 +96,29 @@ if ($isAdmin) {
     } catch (Throwable $e) {}
 
     // 6. Telegram webhook errors recientes (si aplica)
+    // OJO: tgGetWebhookInfo() hace HTTP a api.telegram.org (~200-500ms).
+    // Como notifications.php se llama via polling cada pocos segundos,
+    // cacheamos el resultado en disco por 5 min para no saturarlo.
     try {
-        $info = getSetting('telegram_enabled', '0') === '1' ? tgGetWebhookInfo() : null;
-        if ($info && !empty($info['ok']) && !empty($info['result']['last_error_message'])) {
-            $items[] = [
-                'tone' => 'amber',
-                'title' => 'Webhook Telegram con error',
-                'sub'   => substr($info['result']['last_error_message'], 0, 60),
-                'url'   => 'admin_telegram_debug.php',
-                'icon'  => 'M12 9v2m0 4h.01',
-            ];
+        if (getSetting('telegram_enabled', '0') === '1') {
+            $tgInfoCache = __DIR__ . '/uploads/logs/telegram_webhook_info.cache';
+            $cacheAge = is_file($tgInfoCache) ? (time() - filemtime($tgInfoCache)) : PHP_INT_MAX;
+            if ($cacheAge < 300) {
+                $info = json_decode((string)@file_get_contents($tgInfoCache), true) ?: null;
+            } else {
+                $info = tgGetWebhookInfo();
+                @mkdir(dirname($tgInfoCache), 0755, true);
+                @file_put_contents($tgInfoCache, json_encode($info, JSON_UNESCAPED_UNICODE));
+            }
+            if ($info && !empty($info['ok']) && !empty($info['result']['last_error_message'])) {
+                $items[] = [
+                    'tone' => 'amber',
+                    'title' => 'Webhook Telegram con error',
+                    'sub'   => substr($info['result']['last_error_message'], 0, 60),
+                    'url'   => 'admin_telegram_debug.php',
+                    'icon'  => 'M12 9v2m0 4h.01',
+                ];
+            }
         }
     } catch (Throwable $e) {}
 

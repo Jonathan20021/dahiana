@@ -5,27 +5,39 @@
 if (!defined('TELEGRAM_LIB_LOADED')) define('TELEGRAM_LIB_LOADED', true);
 
 function tgConfig() {
-    return [
+    static $cfg = null;
+    if ($cfg !== null) return $cfg;
+    $cfg = [
         'enabled'        => getSetting('telegram_enabled', '0') === '1',
         'token'          => trim(getSetting('telegram_bot_token', '')),
         'username'       => trim(getSetting('telegram_bot_username', '')),
         'webhook_secret' => trim(getSetting('telegram_webhook_secret', '')),
     ];
+    return $cfg;
 }
 
 function tgApi($method, $params = [], $multipart = false) {
     $cfg = tgConfig();
     if (empty($cfg['token'])) return ['ok' => false, 'error' => 'Token no configurado'];
 
+    // Curl handle reusable -> evita un TLS handshake por llamada.
+    // En el flujo de Telegram ahorra ~150-300ms por API call.
+    static $ch = null;
+    if ($ch === null) $ch = curl_init();
+
     $url = 'https://api.telegram.org/bot' . $cfg['token'] . '/' . $method;
-    $ch  = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => $multipart ? [] : ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_TCP_NODELAY    => true,
+    ]);
     // getUpdates con long-poll necesita timeout > el "timeout" del parametro.
-    // El polling usa timeout=25s, asi que damos 40s de holgura.
+    // El polling usa timeout=25s, asi que damos 35s de holgura.
     $isLongPoll = ($method === 'getUpdates' && !empty($params['timeout']));
-    curl_setopt($ch, CURLOPT_TIMEOUT, $isLongPoll ? 40 : 25);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $isLongPoll ? 35 : 12);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
     if ($multipart) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
     } else {
@@ -34,7 +46,7 @@ function tgApi($method, $params = [], $multipart = false) {
     $resp = curl_exec($ch);
     $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
-    curl_close($ch);
+    // OJO: NO cerrar $ch — se reutiliza entre llamadas.
 
     if ($resp === false) return ['ok' => false, 'error' => 'Red: ' . $err];
     $json = json_decode($resp, true);

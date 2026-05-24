@@ -741,7 +741,10 @@ function aiBuildPayload($model, $dataUrl, $hintBlock) {
             ],
         ],
         'temperature' => 0.0,
-        'max_tokens'  => 1500,
+        // El JSON de extraccion completo cabe en <500 tokens. 900 deja holgura
+        // y reduce un poco la latencia (menos tiempo "pensando" si el modelo
+        // intenta extenderse).
+        'max_tokens'  => 900,
     ];
 }
 
@@ -750,23 +753,28 @@ function aiBuildPayload($model, $dataUrl, $hintBlock) {
  */
 function aiCallOpenAI(array $payload, string $apiKey, int $maxAttempts = 2) {
     $lastError = '';
+    // Reusar handle entre retries para evitar otro TLS handshake.
+    static $ch = null;
+    if ($ch === null) $ch = curl_init();
     for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-        $ch = curl_init('https://api.openai.com/v1/chat/completions');
         curl_setopt_array($ch, [
+            CURLOPT_URL            => 'https://api.openai.com/v1/chat/completions',
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
             CURLOPT_HTTPHEADER     => [
                 'Authorization: Bearer ' . $apiKey,
                 'Content-Type: application/json',
+                'Connection: keep-alive',
             ],
             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
             CURLOPT_TIMEOUT        => 45,
-            CURLOPT_CONNECTTIMEOUT => 20,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TCP_NODELAY    => true,
         ]);
         $resp = curl_exec($ch);
         $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err  = curl_error($ch);
-        curl_close($ch);
+        // NO cerrar $ch — se reutiliza para retries y futuras llamadas.
 
         if ($resp === false) { $lastError = 'Red: ' . $err; continue; }
         $json = json_decode($resp, true);
@@ -806,10 +814,12 @@ function aiExtractWithConsensus($dataUrl, $hintBlock, $cfg, $secondaryModel) {
             CURLOPT_HTTPHEADER     => [
                 'Authorization: Bearer ' . $cfg['api_key'],
                 'Content-Type: application/json',
+                'Connection: keep-alive',
             ],
             CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
             CURLOPT_TIMEOUT        => 50,
-            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TCP_NODELAY    => true,
         ]);
     };
     $opts($chA, $payloadA);

@@ -1113,22 +1113,42 @@ function requireAuth($role = null) {
 }
 
 // Load all company settings as associative array
-function getSettings() {
-    global $pdo;
-    $rows = $pdo->query("SELECT setting_key, setting_value FROM settings")->fetchAll();
-    $settings = [];
-    foreach ($rows as $row) {
-        $settings[$row['setting_key']] = $row['setting_value'];
-    }
-    return $settings;
+// Cache de settings a nivel request. Evita un SELECT por cada getSetting().
+// En el flow de Telegram esto bajaba 20+ queries por mensaje a 1.
+function &settingsCache() {
+    static $cache = null;
+    return $cache;
 }
 
-// Get a single setting with default fallback
-function getSetting($key, $default = '') {
+function loadAllSettings() {
     global $pdo;
-    $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = ?");
-    $stmt->execute([$key]);
-    $row = $stmt->fetch();
-    return $row ? $row['setting_value'] : $default;
+    $cache = &settingsCache();
+    if ($cache !== null) return $cache;
+    $cache = [];
+    try {
+        $rows = $pdo->query("SELECT setting_key, setting_value FROM settings")->fetchAll();
+        foreach ($rows as $row) {
+            $cache[$row['setting_key']] = $row['setting_value'];
+        }
+    } catch (PDOException $e) {
+        $cache = [];
+    }
+    return $cache;
+}
+
+// Tras un UPDATE/INSERT en settings hay que invalidar el cache.
+function clearSettingsCache() {
+    $cache = &settingsCache();
+    $cache = null;
+}
+
+function getSettings() {
+    return loadAllSettings();
+}
+
+// Get a single setting with default fallback (cached por request).
+function getSetting($key, $default = '') {
+    $cache = loadAllSettings();
+    return array_key_exists($key, $cache) ? $cache[$key] : $default;
 }
 ?>

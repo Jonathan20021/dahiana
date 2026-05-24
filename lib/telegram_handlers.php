@@ -12,8 +12,7 @@ function tgRespondError($chatId, $msg) {
 function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $caption = '') {
     global $pdo;
 
-    // ========= INDICADOR "typing" + ACK INMEDIATO =========
-    @tgSendChatAction($chatId, 'typing');
+    // ========= ACK INMEDIATO (el mensaje en si ya hace de indicador, ahorra ~300ms) =========
     $ack = tgSendMessage($chatId, "📄 Recibida. Procesando con IA...");
     $ackMessageId = (int)($ack['result']['message_id'] ?? 0);
 
@@ -125,9 +124,6 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
             FILE_APPEND
         );
     }
-
-    // Refrescar typing antes de la IA (caduca a los 5s)
-    @tgSendChatAction($chatId, 'typing');
 
     // Procesamiento inline (default): el polling loop espera al resultado de IA
     // pero el ack ya fue enviado, asi que el cliente no nota la diferencia.

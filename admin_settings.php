@@ -55,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         }
         $stmt->execute([$field, $val]);
     }
+    clearSettingsCache();
     $success = "Configuracion guardada exitosamente.";
 }
 
@@ -67,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'teleg
         if ($secret === '') {
             $secret = bin2hex(random_bytes(8));
             $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_webhook_secret', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)")->execute([$secret]);
+            clearSettingsCache();
         }
         $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
@@ -77,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'teleg
             $info = tgGetMe();
             if ($info['ok'] && !empty($info['result']['username'])) {
                 $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('telegram_bot_username', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)")->execute([$info['result']['username']]);
+                clearSettingsCache();
             }
             $success = 'Webhook conectado en ' . $url;
         } else {
