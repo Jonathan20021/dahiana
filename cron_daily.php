@@ -69,6 +69,11 @@ try {
 
     // ========================================================================
     // 3. Recordatorios de vencimiento (5 dias antes y 1 dia antes)
+    //    Regla de negocio: SOLO se notifica (email + bot) lo que la contable
+    //    dejo ACTIVO para el cliente. El INNER JOIN con
+    //    client_obligation_subscriptions (enabled=1) garantiza que, aunque
+    //    queden obligaciones generadas de un tipo que luego se desactivo, no
+    //    se envie ningun recordatorio de ese tipo.
     // ========================================================================
     $reminderDays = [5, 1];
     $remindersSent = 0;
@@ -78,6 +83,10 @@ try {
                    u.name, u.email, u.phone
             FROM tax_obligations o
             JOIN users u ON u.id = o.client_id
+            JOIN client_obligation_subscriptions cos
+              ON cos.client_id = o.client_id
+             AND cos.obligation_type = o.obligation_type
+             AND cos.enabled = 1
             WHERE o.status = 'pendiente'
               AND o.dismissed_at IS NULL
               AND o.due_date = DATE_ADD(CURDATE(), INTERVAL ? DAY)

@@ -197,6 +197,23 @@ function emailFmtPeriod($period) {
 }
 
 /**
+ * URL base del portal para los enlaces de los correos.
+ * Prioriza el setting 'portal_url' (imprescindible cuando el correo se envia desde
+ * el cron por CLI, donde no existe $_SERVER['HTTP_HOST']). Cae a deteccion por
+ * request HTTP y, como ultimo recurso, devuelve '' (el llamador omite el boton).
+ */
+function emailBaseUrl() {
+    $configured = trim(getSetting('portal_url', ''));
+    if ($configured !== '') return rtrim($configured, '/');
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host !== '') {
+        $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        return $proto . '://' . $host;
+    }
+    return '';
+}
+
+/**
  * Email de bienvenida con credenciales iniciales.
  */
 function sendWelcomeEmail($clientId, $plainPassword) {
@@ -464,29 +481,80 @@ function sendObligationReminderEmail($obligationId) {
 
     $name = htmlspecialchars($ob['client_name']);
     $obLabel = htmlspecialchars(function_exists('getObligationLabel') ? getObligationLabel($ob['obligation_type']) : $ob['obligation_type']);
+    $obCode = htmlspecialchars($ob['obligation_type']);
     $period = htmlspecialchars(emailFmtPeriod($ob['period']));
     $due = emailFmtDate($ob['due_date']);
 
-    $days = (int) ((strtotime($ob['due_date']) - strtotime(date('Y-m-d'))) / 86400);
-    $dayLabel = $days < 0 ? "Vencido hace " . abs($days) . " dias"
-              : ($days === 0 ? "Vence hoy" : "Vence en {$days} dias");
-    $bgUrgent = $days < 0 ? '#FEF2F2' : ($days <= 3 ? '#FFFBEB' : '#EFF6FF');
-    $colorUrgent = $days < 0 ? '#DC2626' : ($days <= 3 ? '#B45309' : '#2563EB');
+    $days = (int) floor((strtotime($ob['due_date']) - strtotime(date('Y-m-d'))) / 86400);
+    if ($days < 0) {
+        $dayLabel = 'Vencida hace ' . abs($days) . ' ' . (abs($days) === 1 ? 'dia' : 'dias');
+        $accent = '#DC2626'; $soft = '#FEF2F2';
+        $intro = 'tienes una obligacion fiscal <strong>vencida</strong>. Te recomendamos regularizarla cuanto antes para evitar recargos.';
+    } elseif ($days === 0) {
+        $dayLabel = 'Vence hoy';
+        $accent = '#D97706'; $soft = '#FFFBEB';
+        $intro = 'tienes una obligacion fiscal que <strong>vence hoy</strong>.';
+    } elseif ($days === 1) {
+        $dayLabel = 'Vence manana';
+        $accent = '#D97706'; $soft = '#FFFBEB';
+        $intro = 'tienes una obligacion fiscal que <strong>vence manana</strong>.';
+    } elseif ($days <= 3) {
+        $dayLabel = "Vence en {$days} dias";
+        $accent = '#D97706'; $soft = '#FFFBEB';
+        $intro = 'tienes una obligacion fiscal proxima a vencer.';
+    } else {
+        $dayLabel = "Vence en {$days} dias";
+        $accent = '#2563EB'; $soft = '#EFF6FF';
+        $intro = 'tienes una obligacion fiscal proxima a vencer.';
+    }
 
     $body = "
-        <p>Hola <strong>{$name}</strong>,</p>
-        <p>Te escribimos para recordarte que la siguiente obligacion DGII esta proxima a vencer:</p>
-        <div style='background:{$bgUrgent};border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin:18px 0;'>
-            <p style='margin:0 0 8px;font-weight:800;font-size:16px;color:#0F172A;'>{$obLabel}</p>
-            <p style='margin:0 0 6px;color:#475569;font-size:13px;'>Periodo: <strong>{$period}</strong></p>
-            <p style='margin:0 0 10px;color:#475569;font-size:13px;'>Fecha limite: <strong>{$due}</strong></p>
-            <span style='display:inline-block;background:{$colorUrgent};color:#fff;border-radius:999px;padding:5px 14px;font-size:12px;font-weight:700;'>{$dayLabel}</span>
-        </div>
-        <p>Por favor envianos cualquier documentacion pendiente para procesarla a tiempo.</p>
-    ";
-    $html = wrapEmailBase('Recordatorio DGII', $body);
+        <p style='margin:0 0 14px;'>Hola <strong>{$name}</strong>,</p>
+        <p style='margin:0 0 6px;'>Te escribimos para recordarte que {$intro}</p>
 
-    return sendEmailRaw($ob['client_email'], "Recordatorio DGII · {$obLabel} {$period}", $html, ['kind' => 'obligation_reminder', 'related_id' => $obligationId]);
+        <table width='100%' cellpadding='0' cellspacing='0' border='0' role='presentation' style='margin:22px 0;'>
+            <tr><td style='border:1px solid #E6E9EE;border-radius:16px;overflow:hidden;'>
+                <table width='100%' cellpadding='0' cellspacing='0' border='0' role='presentation'>
+                    <tr><td style='height:5px;line-height:5px;font-size:5px;background:{$accent};'>&nbsp;</td></tr>
+                    <tr><td style='padding:20px 22px;background:#FFFFFF;'>
+                        <table width='100%' cellpadding='0' cellspacing='0' border='0' role='presentation'>
+                            <tr>
+                                <td style='vertical-align:middle;'>
+                                    <span style='display:inline-block;background:#0F172A;color:#FFFFFF;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:800;letter-spacing:0.5px;'>{$obCode}</span>
+                                </td>
+                                <td align='right' style='vertical-align:middle;'>
+                                    <span style='display:inline-block;background:{$soft};color:{$accent};border-radius:999px;padding:5px 13px;font-size:12px;font-weight:700;'>{$dayLabel}</span>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <p style='margin:16px 0 18px;font-weight:800;font-size:20px;color:#0F172A;line-height:1.25;'>{$obLabel}</p>
+
+                        <table width='100%' cellpadding='0' cellspacing='0' border='0' role='presentation' style='border-top:1px solid #EEF0F2;'>
+                            <tr>
+                                <td style='padding:13px 0 0;color:#64748B;font-size:12px;'>Periodo declarado</td>
+                                <td align='right' style='padding:13px 0 0;color:#0F172A;font-size:13px;font-weight:700;'>{$period}</td>
+                            </tr>
+                            <tr>
+                                <td style='padding:8px 0 0;color:#64748B;font-size:12px;'>Fecha limite</td>
+                                <td align='right' style='padding:8px 0 0;color:{$accent};font-size:15px;font-weight:800;'>{$due}</td>
+                            </tr>
+                        </table>
+                    </td></tr>
+                </table>
+            </td></tr>
+        </table>
+
+        <p style='margin:0 0 2px;color:#334155;'>Si ya nos enviaste la documentacion de este periodo, puedes ignorar este mensaje. De lo contrario, compartela cuanto antes para presentarla a tiempo.</p>
+    ";
+
+    $base = emailBaseUrl();
+    $ctaUrl = $base !== '' ? $base . '/client_calendar.php' : null;
+    $ctaLabel = $ctaUrl ? 'Ver en mi portal' : null;
+
+    $html = wrapEmailBase('Recordatorio de vencimiento DGII', $body, $ctaUrl, $ctaLabel);
+
+    return sendEmailRaw($ob['client_email'], "Recordatorio DGII · {$obLabel} · {$period}", $html, ['kind' => 'obligation_reminder', 'related_id' => $obligationId]);
 }
 
 /**

@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         'company_name','company_rnc','company_address','company_phone','company_email',
         'company_slogan','company_initials','invoice_note','whatsapp_greeting',
         'whatsapp_invoice_template','whatsapp_request_template',
-        'email_from','email_from_name','email_reply_to',
+        'email_from','email_from_name','email_reply_to','portal_url',
         'openai_model','openai_max_size_mb','openai_auto_approve_threshold',
         'openai_secondary_model',
         'telegram_bot_username',
@@ -380,6 +380,11 @@ include 'components/layout_start.php';
                         <div class="sm:col-span-2">
                             <label class="field-label">Reply-To (opcional)</label>
                             <input type="email" name="email_reply_to" value="<?= htmlspecialchars(getSetting('email_reply_to', '')) ?>" class="field" placeholder="Para que las respuestas lleguen a otro correo">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="field-label">URL del portal</label>
+                            <input type="url" name="portal_url" value="<?= htmlspecialchars(getSetting('portal_url', '')) ?>" class="field" placeholder="https://amdaccouting.kyrosrd.com">
+                            <p class="mt-1 text-[11px] text-slate-400">Direccion publica del portal. Se usa para los botones de los correos (incluidos los recordatorios que envia el cron). Sin barra final.</p>
                         </div>
                     </div>
                 </div>

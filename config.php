@@ -340,6 +340,7 @@ function bootstrapCrmSchema() {
             'email_from'         => 'no-reply@kyrosrd.com',
             'email_from_name'    => '',
             'email_reply_to'     => '',
+            'portal_url'         => 'https://amdaccouting.kyrosrd.com',
             'notify_welcome'     => '1',
             'notify_invoice'     => '1',
             'notify_invoice_paid'=> '1',

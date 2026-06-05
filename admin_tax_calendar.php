@@ -351,7 +351,7 @@ include 'components/layout_start.php';
                     <?php endif; ?>
 
                     <?php if (in_array($ob['status'], ['pendiente','vencido'], true)): ?>
-                    <button type="submit" form="emailForm-<?= $ob['id'] ?>" class="tc-icon-btn" title="Recordar por email">
+                    <button type="submit" form="emailForm-<?= $ob['id'] ?>" class="tc-icon-btn tc-email-btn" title="Recordar por email">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                     </button>
                     <?php endif; ?>
@@ -506,6 +506,22 @@ include 'components/layout_start.php';
     window.addEventListener('scroll', closeAllTcMenus, true);
     window.addEventListener('resize', closeAllTcMenus);
     document.querySelectorAll('.tc-menu').forEach(m => m.addEventListener('click', e => e.stopPropagation()));
+
+    // Estado "Enviando..." inmediato al recordar por email (feedback mientras el
+    // servidor contacta a Resend y recarga la pagina).
+    const SPINNER = '<svg class="tc-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"/><path d="M21 12a9 9 0 00-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
+    document.querySelectorAll('.tc-email-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.preventDefault();
+            if (btn.dataset.sending) return;
+            btn.dataset.sending = '1';
+            btn.classList.add('is-sending');
+            btn.setAttribute('title', 'Enviando...');
+            btn.innerHTML = SPINNER;
+            const form = document.getElementById(btn.getAttribute('form'));
+            if (form) { form.requestSubmit ? form.requestSubmit() : form.submit(); }
+        });
+    });
 })();
 </script>
 
@@ -576,6 +592,10 @@ include 'components/layout_start.php';
     .tc-icon-btn { width: 32px; height: 32px; border-radius: 10px; background: #F4F4F5; color: #64748B; display: inline-flex; align-items: center; justify-content: center; transition: all .15s ease; }
     .tc-icon-btn:hover { background: #DBEAFE; color: #1D4ED8; }
     .tc-icon-wa:hover { background: #DCFCE7; color: #15803D; }
+    .tc-icon-btn.is-sending { background: #DBEAFE; color: #1D4ED8; cursor: wait; }
+    .tc-icon-btn.is-sending:hover { background: #DBEAFE; }
+    @keyframes tc-spin { to { transform: rotate(360deg); } }
+    .tc-spin { animation: tc-spin .7s linear infinite; }
 
     .tc-menu-wrap { position: relative; }
     .tc-menu { position: fixed; min-width: 200px; background: #fff; border: 1px solid #E5E7EB; border-radius: 14px; box-shadow: 0 18px 50px rgba(15,23,42,0.18); z-index: 9000; padding: 6px; }
