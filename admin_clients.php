@@ -44,9 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
             if ($generated > 0) {
                 logClientActivity($newId, 'tax', "Se generaron {$generated} obligaciones DGII automaticas");
             }
-            // Enviar welcome email
+            // Enviar welcome email (salvo que el admin lo haya bloqueado para este cliente)
             $emailMsg = '';
-            if (getSetting('notify_welcome', '1') === '1') {
+            $skipWelcome = isset($_POST['skip_welcome_email']);
+            if ($skipWelcome) {
+                $emailMsg = ' Correo de bienvenida bloqueado (no se envio).';
+                logClientActivity($newId, 'email', "Welcome email bloqueado manualmente para {$email}");
+            } elseif (getSetting('notify_welcome', '1') === '1') {
                 $res = sendWelcomeEmail($newId, $password);
                 if (!empty($res['ok'])) {
                     $emailMsg = ' Email de bienvenida enviado.';
@@ -387,6 +391,15 @@ include 'components/layout_start.php';
                             <div class="md:col-span-2">
                                 <label class="field-label">Contrasena inicial *</label>
                                 <input type="text" name="password" required class="field">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="flex items-start gap-2.5 cursor-pointer select-none rounded-xl border border-stone-200 bg-stone-50/60 px-3 py-2.5 hover:bg-stone-50 transition-colors">
+                                    <input type="checkbox" name="skip_welcome_email" value="1" class="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20">
+                                    <span class="text-[13px] leading-snug text-slate-700">
+                                        <span class="font-semibold text-slate-900">No enviar correo de bienvenida</span><br>
+                                        <span class="text-[11px] text-slate-500">Bloquea el correo automatico con las credenciales para este cliente. Podras compartirlas manualmente.</span>
+                                    </span>
+                                </label>
                             </div>
                         </div>
                     </div>
