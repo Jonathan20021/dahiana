@@ -122,17 +122,17 @@ $main_max = 'max-w-6xl';
 include 'components/layout_start.php';
 ?>
 
-<!-- Hero: subir facturas con IA -->
+<!-- Hero: subir facturas -->
 <div data-tour="upload-hero" class="surface-card overflow-hidden mb-5 bg-gradient-to-br from-slate-900 to-slate-800 text-white border-0">
     <div class="px-6 py-6 lg:px-8 lg:py-7 grid grid-cols-1 lg:grid-cols-5 gap-5 items-center">
         <div class="lg:col-span-3">
             <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-blue-200">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                IA fiscal activa
+                Asesoria fiscal activa
             </span>
             <h2 class="text-2xl lg:text-3xl font-extrabold mt-3 leading-tight">Sube tus facturas y nosotros armamos el 606, 607 e IT-1.</h2>
             <p class="mt-2 text-sm text-slate-300 leading-relaxed">
-                Toma una foto a tu factura desde el celular. La IA lee RNC, NCF, ITBIS y categoria, y tu asesor solo valida.
+                Toma una foto a tu factura desde el celular. Leemos RNC, NCF, ITBIS y categoria, y tu asesor valida.
             </p>
             <div class="mt-4 flex flex-wrap gap-2">
                 <a href="client_uploads.php" class="inline-flex items-center gap-2 rounded-2xl bg-white text-slate-900 px-5 py-2.5 text-sm font-bold hover:bg-blue-50 transition-colors">
@@ -233,7 +233,7 @@ include 'components/layout_start.php';
                 <p class="text-[11px] text-slate-500 leading-snug mt-1">El equipo aun no ha activado el bot. Mientras tanto, usa el portal.</p>
                 <?php else: ?>
                 <p class="text-[11px] text-slate-500 leading-snug mt-1">
-                    Conecta una vez y luego solo envias fotos al chat. La IA se encarga del resto.
+                    Conecta una vez y luego solo envias fotos al chat. Nosotros nos encargamos del resto.
                 </p>
                 <div class="mt-3 space-y-2">
                     <div class="rounded-xl bg-stone-50 border border-stone-200 px-3 py-2 flex items-center gap-2">

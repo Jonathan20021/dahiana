@@ -8,7 +8,7 @@ header('Cache-Control: public, max-age=3600');
 $name = trim(getSetting('company_name', 'Portal Asesoria')) ?: 'Portal Asesoria';
 $rawShort = trim(getSetting('company_initials', ''));
 $shortName = $rawShort !== '' ? $rawShort : substr($name, 0, 12);
-$description = trim(getSetting('company_description', '')) ?: 'Portal de gestion fiscal con IA. Sube facturas, revisa formularios DGII y comunicate con tu asesor.';
+$description = trim(getSetting('company_description', '')) ?: 'Portal de gestion fiscal. Sube facturas, revisa formularios DGII y comunicate con tu asesor.';
 
 $isClientLogged = isset($_SESSION['user_id']) && (($_SESSION['role'] ?? 'client') !== 'admin');
 $startUrl = $isClientLogged ? './client_dashboard.php' : './login.php';

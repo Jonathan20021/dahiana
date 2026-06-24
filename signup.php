@@ -214,13 +214,13 @@ function renderField($field, $catalog, $isReq, $taxRegimes, $operationTypes) {
                     <span class="text-blue-300">en piloto automatico.</span>
                 </h2>
                 <p class="text-sm text-slate-300 leading-relaxed max-w-sm">
-                    Sube facturas, deja que la IA arme tu 606, 607 e IT-1, y comunicate con tu asesor desde un solo lugar.
+                    Sube facturas, nosotros armamos tu 606, 607 e IT-1, y comunicate con tu asesor desde un solo lugar.
                 </p>
 
                 <ul class="space-y-3 text-sm text-slate-300">
                     <?php
                     $benefits = [
-                        'IA fiscal que lee tus facturas en segundos',
+                        'Procesamos tus facturas en segundos',
                         'Reportes DGII (606, 607, IT-1) generados solos',
                         'Manda facturas por Telegram desde el celular',
                         'Calendario fiscal con todos tus vencimientos',

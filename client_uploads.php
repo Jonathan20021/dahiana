@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
         }
 
         if ($uploadedOk > 0 && empty($failed)) {
-            $success = "{$uploadedOk} factura(s) subida(s) y procesada(s) con IA.";
+            $success = "{$uploadedOk} factura(s) subida(s) y procesada(s).";
         } elseif ($uploadedOk > 0) {
             $success = "{$uploadedOk} subida(s). Con errores: " . implode(', ', $failed);
         } else {
@@ -173,7 +173,7 @@ $s = $summary->fetch() ?: ['total'=>0,'approved'=>0,'extracted'=>0,'pending'=>0,
 $it1Balance = (float)$s['itbis_ventas'] - (float)$s['itbis_compras'];
 
 $page_title = 'Mis facturas';
-$page_subtitle = 'Sube tus facturas, nuestra IA arma tu 606, 607 e IT-1 automaticamente.';
+$page_subtitle = 'Sube tus facturas y armamos tu 606, 607 e IT-1 automaticamente.';
 $main_max = 'max-w-6xl';
 include 'components/layout_start.php';
 ?>
@@ -232,8 +232,8 @@ include 'components/layout_start.php';
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
         </div>
         <div>
-            <h3 class="cu-upload-title">Sube tus facturas con IA</h3>
-            <p class="cu-upload-desc">Toma una foto a tu factura o suelta el archivo aqui. La IA extrae RNC, NCF, ITBIS y total automaticamente.</p>
+            <h3 class="cu-upload-title">Sube tus facturas</h3>
+            <p class="cu-upload-desc">Toma una foto a tu factura o suelta el archivo aqui. Extraemos RNC, NCF, ITBIS y total automaticamente.</p>
             <div class="cu-upload-pills">
                 <span class="cu-mini-pill">JPG · PNG · WEBP · HEIC</span>
                 <span class="cu-mini-pill">Multiple a la vez</span>
@@ -257,13 +257,13 @@ include 'components/layout_start.php';
 
         <div class="cu-upload-controls">
             <select name="doc_type" class="cu-select">
-                <option value="auto">Auto (la IA decide)</option>
+                <option value="auto">Auto (deteccion automatica)</option>
                 <option value="compra">Compra (para el 606)</option>
                 <option value="venta">Venta (para el 607)</option>
             </select>
             <button type="submit" id="uploadBtn" class="cu-submit-btn">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                Procesar con IA
+                Procesar facturas
             </button>
         </div>
     </form>
@@ -347,7 +347,7 @@ include 'components/layout_start.php';
                     <span class="cu-meta-item"><span class="cu-meta-label"><?= $u['date_doc'] ? date('d/m/Y', strtotime($u['date_doc'])) : '—' ?></span></span>
                     <?php if ($confidence > 0): ?>
                     <span class="cu-meta-item cu-conf cu-conf-<?= $confidence >= 0.85 ? 'good' : ($confidence >= 0.6 ? 'mid' : 'low') ?>">
-                        IA <?= $confPct ?>%
+                        Precision <?= $confPct ?>%
                     </span>
                     <?php endif; ?>
                     <?php elseif ($u['status'] === 'error'): ?>
@@ -370,7 +370,7 @@ include 'components/layout_start.php';
                 <form method="POST" class="inline-flex">
                     <input type="hidden" name="action" value="reprocess">
                     <input type="hidden" name="upload_id" value="<?= $u['id'] ?>">
-                    <button type="submit" class="cu-action-btn cu-action-btn-blue" title="Reprocesar con IA">
+                    <button type="submit" class="cu-action-btn cu-action-btn-blue" title="Reprocesar">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     </button>
                 </form>

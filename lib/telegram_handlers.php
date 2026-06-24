@@ -13,7 +13,7 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     global $pdo;
 
     // ========= ACK INMEDIATO (el mensaje en si ya hace de indicador, ahorra ~300ms) =========
-    $ack = tgSendMessage($chatId, "📄 Recibida. Procesando con IA...");
+    $ack = tgSendMessage($chatId, "📄 Recibida. Procesando...");
     $ackMessageId = (int)($ack['result']['message_id'] ?? 0);
 
     // Rate limit: max 30 facturas/hora por chat
@@ -104,7 +104,7 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
 
     $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
     if (!$autoProcess) {
-        $fallback = "Factura recibida. Tu asesor la procesara con IA en breve.";
+        $fallback = "Factura recibida. Tu asesor la procesara en breve.";
         if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $fallback);
         else tgSendMessage($chatId, $fallback);
         return;
@@ -129,7 +129,7 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
     // pero el ack ya fue enviado, asi que el cliente no nota la diferencia.
     $res = aiProcessUpload($uploadId);
     if (!$res['ok']) {
-        $errMsg = "⚠️ La IA tuvo un problema:\n<i>" . htmlspecialchars($res['error']) . "</i>\n\nNo te preocupes — tu asesor la procesara manualmente.";
+        $errMsg = "⚠️ Tuvimos un problema al procesarla:\n<i>" . htmlspecialchars($res['error']) . "</i>\n\nNo te preocupes — tu asesor la procesara manualmente.";
         if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $errMsg);
         else tgSendMessage($chatId, $errMsg);
         return;
@@ -151,7 +151,7 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
             "🔢 NCF: <code>" . htmlspecialchars($e['ncf'] ?: 'No leido') . "</code>",
             "💵 Total: <b>RD$ " . number_format((float)$e['total'], 2) . "</b>",
             "📊 ITBIS: RD$ " . number_format((float)$e['itbis'], 2),
-            "🤖 Confianza IA: <b>{$conf}%</b>",
+            "📊 Confianza: <b>{$conf}%</b>",
             "",
             ($conf >= 90
                 ? "Lista para que tu asesor la valide."
@@ -178,7 +178,7 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
         }
         return;
     }
-    $fallback = "Factura recibida. Tu asesor la procesara con IA en breve.";
+    $fallback = "Factura recibida. Tu asesor la procesara en breve.";
     if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $fallback);
     else tgSendMessage($chatId, $fallback);
 }
@@ -443,11 +443,11 @@ function tgHandleMessage(array $msg) {
                 $lines[] = "Subtotal: RD$ " . number_format((float)$r['subtotal'], 2);
                 $lines[] = "ITBIS: RD$ " . number_format((float)$r['itbis'], 2);
                 $lines[] = "<b>Total: RD$ " . number_format((float)$r['total'], 2) . "</b>";
-                $lines[] = "🤖 Confianza IA: {$conf}%";
+                $lines[] = "📊 Confianza: {$conf}%";
             } elseif ($r['error_message']) {
                 $lines[] = "<i>Error: " . htmlspecialchars(mb_substr($r['error_message'], 0, 200)) . "</i>";
             } else {
-                $lines[] = "<i>Aun no procesada por la IA.</i>";
+                $lines[] = "<i>Aun no procesada.</i>";
             }
             tgSendMessage($chatId, implode("\n", $lines));
             return;

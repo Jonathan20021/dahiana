@@ -300,7 +300,7 @@ function tgWelcomeText($companyName) {
     return implode("\n", [
         "👋 <b>Bienvenido a {$companyName}</b>",
         "",
-        "Soy el asistente que recibe tus facturas y las procesa con IA para tu 606, 607 e IT-1.",
+        "Soy el asistente que recibe tus facturas y las procesa para tu 606, 607 e IT-1.",
         "",
         "🔗 <b>Como vincular tu cuenta</b>",
         "1. Entra a tu portal y abre <b>Mi perfil</b>.",
@@ -308,7 +308,7 @@ function tgWelcomeText($companyName) {
         "3. Aqui escribe: <code>/vincular CODIGO</code>",
         "",
         "Cuando estes vinculado:",
-        "📷 Envia <b>fotos</b> de tus facturas (o PDF) y la IA lee RNC, NCF, ITBIS y total.",
+        "📷 Envia <b>fotos</b> de tus facturas (o PDF) y leemos RNC, NCF, ITBIS y total.",
         "💬 Puedes agregar un texto al enviar la foto y se guarda como nota.",
         "📤 Tambien funciona si reenvias varias facturas a la vez.",
         "",
@@ -320,7 +320,7 @@ function tgHelpText() {
     return implode("\n", [
         "📚 <b>Comandos del bot</b>",
         "",
-        "📷 <b>Envia foto o PDF</b> de tu factura → la IA hace todo.",
+        "📷 <b>Envia foto o PDF</b> de tu factura → nosotros hacemos todo.",
         "Tip: puedes agregar texto (caption) y se guarda como nota.",
         "",
         "📊 /estado — resumen del mes (facturas + ITBIS)",
@@ -339,7 +339,7 @@ function tgWelcomeAfterLink($companyName, $label) {
     return implode("\n", [
         "✅ <b>Listo!</b> Cuenta vinculada con <b>" . htmlspecialchars($label) . "</b>.",
         "",
-        "Ya puedes enviarme <b>fotos de tus facturas</b> y la IA las procesa al instante.",
+        "Ya puedes enviarme <b>fotos de tus facturas</b> y las procesamos al instante.",
         "",
         "💡 <b>Tips rapidos:</b>",
         "• Busca buena iluminacion al fotografiar.",

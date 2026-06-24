@@ -205,7 +205,7 @@ include 'components/layout_start.php';
                     <?php endif; ?>
                     Ultima actividad: <?= $tgInfo['last_seen_at'] ? date('d/m/Y H:i', strtotime($tgInfo['last_seen_at'])) : '—' ?>
                 </p>
-                <p class="text-xs text-slate-600 mt-2">Envia fotos al chat con <code class="font-mono">@<?= htmlspecialchars($botUsername) ?></code> y la IA las procesa automaticamente.</p>
+                <p class="text-xs text-slate-600 mt-2">Envia fotos al chat con <code class="font-mono">@<?= htmlspecialchars($botUsername) ?></code> y las procesamos automaticamente.</p>
             </div>
         </div>
         <form method="POST" class="mt-4 flex justify-end" onsubmit="return confirm('Desvincular tu Telegram? Tendras que reconectar para enviar facturas.')">
