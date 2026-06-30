@@ -818,6 +818,11 @@ function permissionsCatalog() {
             'requests.view'         => ['label' => 'Ver solicitudes / tramites',    'page' => 'admin_requests.php'],
             'requests.write'        => ['label' => 'Editar estado de tramites',     'page' => null],
         ],
+        'Boveda de accesos' => [
+            'vault.view'            => ['label' => 'Ver boveda de contrasenas',      'page' => 'admin_vault.php'],
+            'vault.write'           => ['label' => 'Crear / editar / borrar accesos','page' => null],
+            'vault.reveal'          => ['label' => 'Revelar y copiar contrasenas',   'page' => null],
+        ],
         'Fiscal DGII' => [
             'tax_calendar.view'     => ['label' => 'Calendario fiscal',             'page' => 'admin_tax_calendar.php'],
             'tax_filings.view'      => ['label' => 'Formularios 606/607/IT-1',      'page' => 'admin_tax_filings.php'],
@@ -1111,6 +1116,97 @@ function requireAuth($role = null) {
     if ($role && !canAccessArea($_SESSION['role'], $role)) {
         die('No tienes permisos para acceder a esta pagina.');
     }
+}
+
+// =========================================================================
+// Boveda de accesos: cifrado simetrico de datos sensibles (contrasenas,
+// respuestas de seguridad). Usa AES-256-GCM (openssl) con una clave de 256
+// bits unica por instalacion, guardada FUERA del control de versiones.
+// =========================================================================
+
+/**
+ * Devuelve la clave maestra de 32 bytes de la boveda.
+ * Orden de resolucion:
+ *   1) Constante VAULT_MASTER_KEY (base64 de 32 bytes) si esta definida.
+ *   2) Archivo vault.key (base64) en la raiz del proyecto.
+ *   3) Se genera una nueva y se persiste en vault.key (gitignored).
+ * Si no se puede persistir, lanza excepcion para evitar cifrar con una clave
+ * efimera (que volveria los datos ilegibles en la siguiente peticion).
+ */
+function vaultMasterKey() {
+    static $key = null;
+    if ($key !== null) return $key;
+
+    if (defined('VAULT_MASTER_KEY') && VAULT_MASTER_KEY) {
+        $decoded = base64_decode((string) VAULT_MASTER_KEY, true);
+        if ($decoded !== false && strlen($decoded) === 32) {
+            return $key = $decoded;
+        }
+    }
+
+    $keyFile = __DIR__ . '/vault.key';
+    if (is_file($keyFile)) {
+        $raw = trim((string) @file_get_contents($keyFile));
+        $decoded = base64_decode($raw, true);
+        if ($decoded !== false && strlen($decoded) === 32) {
+            return $key = $decoded;
+        }
+    }
+
+    $new = random_bytes(32);
+    $written = @file_put_contents($keyFile, base64_encode($new), LOCK_EX);
+    if ($written === false) {
+        throw new RuntimeException('No se pudo crear la clave de la boveda (vault.key no escribible).');
+    }
+    @chmod($keyFile, 0600);
+    return $key = $new;
+}
+
+/**
+ * Cifra un texto. Devuelve null si la entrada es vacia/null.
+ * Formato de salida: "g1:" . base64(iv[12] . tag[16] . ciphertext)
+ */
+function vaultEncrypt($plaintext) {
+    if ($plaintext === null) return null;
+    $plaintext = (string) $plaintext;
+    if ($plaintext === '') return null;
+
+    $key = vaultMasterKey();
+    $iv  = random_bytes(12);
+    $tag = '';
+    $cipher = openssl_encrypt($plaintext, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+    if ($cipher === false) {
+        throw new RuntimeException('Fallo al cifrar dato de la boveda.');
+    }
+    return 'g1:' . base64_encode($iv . $tag . $cipher);
+}
+
+/**
+ * Descifra un valor guardado por vaultEncrypt().
+ * Si el valor no tiene el prefijo conocido se devuelve tal cual (compatibilidad
+ * con datos que pudieran haber quedado en claro). Devuelve '' en error.
+ */
+function vaultDecrypt($stored) {
+    if ($stored === null || $stored === '') return '';
+    $stored = (string) $stored;
+
+    if (strncmp($stored, 'g1:', 3) === 0) {
+        $bin = base64_decode(substr($stored, 3), true);
+        if ($bin === false || strlen($bin) < 29) return '';
+        $iv     = substr($bin, 0, 12);
+        $tag    = substr($bin, 12, 16);
+        $cipher = substr($bin, 28);
+        try {
+            $key = vaultMasterKey();
+        } catch (Throwable $e) {
+            return '';
+        }
+        $plain = openssl_decrypt($cipher, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+        return $plain === false ? '' : $plain;
+    }
+
+    // Sin prefijo conocido: asumir texto plano heredado.
+    return $stored;
 }
 
 // Load all company settings as associative array
