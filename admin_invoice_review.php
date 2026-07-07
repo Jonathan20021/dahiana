@@ -216,7 +216,12 @@ $where = "1=1 AND " . clientScopeWhere('u.client_id');
 $params = [];
 
 if ($filterStatus === 'pending') {
-    $where .= " AND u.status IN ('extracted')";
+    // "Pendientes" = todo lo que aun requiere accion: extraidas por aprobar,
+    // mas las que quedaron atascadas o con error (para poder reprocesar/borrar).
+    // Antes solo mostraba 'extracted', dejando invisibles las subidas con error
+    // o en proceso: aparecian en "TOTAL SUBIDAS" pero no en la lista, y el
+    // sha256 impedia volver a subirlas ("ya existe") sin poder eliminarlas.
+    $where .= " AND u.status IN ('extracted','uploaded','processing','error')";
 } elseif ($filterStatus === 'approved') {
     $where .= " AND u.status = 'approved'";
 } elseif ($filterStatus === 'errors') {

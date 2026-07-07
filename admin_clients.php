@@ -166,11 +166,13 @@ include 'components/layout_start.php';
         <p class="mt-1 text-2xl lg:text-3xl font-extrabold text-slate-900"><?= (int)$globalStats['leads'] ?></p>
         <p class="text-[11px] text-slate-400 mt-1">Por convertir</p>
     </div>
+    <?php if (isSuperAdmin()): ?>
     <div class="stat-card p-4">
         <p class="text-xs text-slate-500">Ingreso mensual recurrente</p>
         <p class="mt-1 text-2xl lg:text-3xl font-extrabold text-slate-900">RD$ <?= number_format((float)$globalStats['mrr'], 0) ?></p>
         <p class="text-[11px] text-slate-400 mt-1">Suma de igualas</p>
     </div>
+    <?php endif; ?>
     <div class="stat-card p-4">
         <p class="text-xs text-slate-500">Por cobrar</p>
         <p class="mt-1 text-2xl lg:text-3xl font-extrabold text-red-600">RD$ <?= number_format((float)$pendingGlobal, 0) ?></p>
@@ -270,13 +272,15 @@ include 'components/layout_start.php';
         </div>
 
         <!-- KPIs -->
-        <div class="grid grid-cols-3 gap-2 mb-3">
+        <div class="grid <?= isSuperAdmin() ? 'grid-cols-3' : 'grid-cols-2' ?> gap-2 mb-3">
+            <?php if (isSuperAdmin()): ?>
             <div class="rounded-xl bg-stone-50 px-2 py-2 text-center">
                 <p class="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Iguala</p>
                 <p class="text-xs font-extrabold text-slate-900 truncate" title="RD$ <?= number_format((float)$c['iguala_amount'], 2) ?>">
                     <?= (float)$c['iguala_amount'] > 0 ? 'RD$ ' . number_format((float)$c['iguala_amount'], 0) : '-' ?>
                 </p>
             </div>
+            <?php endif; ?>
             <div class="rounded-xl bg-stone-50 px-2 py-2 text-center">
                 <p class="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Tramites</p>
                 <p class="text-xs font-extrabold text-slate-900"><?= (int)$c['active_requests'] ?>/<?= (int)$c['total_requests'] ?></p>
@@ -449,6 +453,7 @@ include 'components/layout_start.php';
                     </div>
 
                     <!-- Iguala config -->
+                    <?php if (isSuperAdmin()): ?>
                     <div>
                         <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3">Iguala (opcional)</p>
                         <div class="grid grid-cols-2 gap-3">
@@ -466,6 +471,7 @@ include 'components/layout_start.php';
                             </div>
                         </div>
                     </div>
+                    <?php endif; ?>
 
                     <!-- Notes -->
                     <div>
