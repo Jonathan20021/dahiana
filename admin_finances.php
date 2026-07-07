@@ -382,9 +382,10 @@ include 'components/layout_start.php';
                     <label class="field-label">Cliente</label>
                     <select name="client_id" id="invoiceClientSelect" required onchange="prefillAmount()" class="field">
                         <option value="">Selecciona un cliente...</option>
+                        <?php $canSeeIguala = isSuperAdmin(); ?>
                         <?php foreach ($clients as $c): ?>
-                        <option value="<?= $c['id'] ?>" data-amount="<?= $c['iguala_amount'] ?>" data-freq="<?= htmlspecialchars($c['iguala_frequency']) ?>" data-name="<?= htmlspecialchars($c['name']) ?>">
-                            <?= htmlspecialchars($c['name']) ?> (<?= $c['iguala_frequency'] ?> · RD$ <?= number_format($c['iguala_amount'], 2) ?>)
+                        <option value="<?= $c['id'] ?>"<?php if ($canSeeIguala): ?> data-amount="<?= $c['iguala_amount'] ?>" data-freq="<?= htmlspecialchars($c['iguala_frequency']) ?>"<?php endif; ?> data-name="<?= htmlspecialchars($c['name']) ?>">
+                            <?= htmlspecialchars($c['name']) ?><?php if ($canSeeIguala): ?> (<?= $c['iguala_frequency'] ?> · RD$ <?= number_format($c['iguala_amount'], 2) ?>)<?php endif; ?>
                         </option>
                         <?php endforeach; ?>
                     </select>

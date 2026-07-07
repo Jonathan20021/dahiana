@@ -443,8 +443,8 @@ include 'components/layout_start.php';
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                             <label class="field-label">Modelo principal</label>
-                            <input type="text" name="openai_model" value="<?= htmlspecialchars(getSetting('openai_model', 'gpt-4o')) ?>" class="field text-sm" placeholder="gpt-4o">
-                            <p class="mt-1 text-[11px] text-slate-400">Default: <code>gpt-4o</code>.</p>
+                            <input type="text" name="openai_model" value="<?= htmlspecialchars(getSetting('openai_model', 'gpt-4.1')) ?>" class="field text-sm" placeholder="gpt-4.1">
+                            <p class="mt-1 text-[11px] text-slate-400">Default: <code>gpt-4.1</code> (mas preciso y economico que gpt-4o).</p>
                         </div>
                         <div>
                             <label class="field-label">Tamano max. por foto (MB)</label>

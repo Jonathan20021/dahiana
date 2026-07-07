@@ -114,9 +114,9 @@ $clients = $stmt->fetchAll();
 // Apply meta-filters in PHP (with_pending, no_iguala)
 if ($filter === 'with_pending') {
     $clients = array_filter($clients, fn($c) => (float)$c['pending_amount'] > 0);
-} elseif ($filter === 'no_iguala') {
+} elseif ($filter === 'no_iguala' && isSuperAdmin()) {
     $clients = array_filter($clients, fn($c) => (float)$c['iguala_amount'] <= 0);
-} elseif ($filter === 'with_iguala') {
+} elseif ($filter === 'with_iguala' && isSuperAdmin()) {
     $clients = array_filter($clients, fn($c) => (float)$c['iguala_amount'] > 0);
 }
 
@@ -198,10 +198,13 @@ include 'components/layout_start.php';
             'activo' => 'Activos',
             'lead' => 'Leads',
             'inactivo' => 'Inactivos',
-            'with_iguala' => 'Con iguala',
-            'no_iguala' => 'Sin iguala',
-            'with_pending' => 'Con pendientes',
         ];
+        // Los filtros por iguala solo los ve el super-admin.
+        if (isSuperAdmin()) {
+            $chips['with_iguala'] = 'Con iguala';
+            $chips['no_iguala'] = 'Sin iguala';
+        }
+        $chips['with_pending'] = 'Con pendientes';
         foreach ($chips as $key => $label):
             $active = $filter === $key;
             $href = '?filter=' . urlencode($key) . ($q ? '&q=' . urlencode($q) : '');

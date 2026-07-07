@@ -190,7 +190,7 @@ function bootstrapAiInvoiceSchema() {
         $defaults = [
             'openai_enabled'  => '1',
             'openai_api_key'  => '', // configure desde admin_settings.php
-            'openai_model'    => 'gpt-4o',
+            'openai_model'    => 'gpt-4.1',
             'openai_max_size_mb' => '12',
             'openai_auto_process' => '1',
             'openai_auto_approve_threshold' => '0',  // 0 = nunca auto-aprobar. 0.95 = aprobar si confianza >= 95%
@@ -403,7 +403,7 @@ function aiOpenAIConfig() {
     return [
         'enabled' => getSetting('openai_enabled', '1') === '1',
         'api_key' => trim(getSetting('openai_api_key', '')),
-        'model'   => trim(getSetting('openai_model', 'gpt-4o')) ?: 'gpt-4o',
+        'model'   => trim(getSetting('openai_model', 'gpt-4.1')) ?: 'gpt-4.1',
     ];
 }
 
@@ -439,11 +439,17 @@ function aiSystemPrompt() {
         "5. Transporte: solo si aparece como linea separada en la factura.",
         "6. Subtotal = base imponible (sin ITBIS, sin propina, sin transporte).",
         "7. Total = subtotal + ITBIS + propina + transporte + otros impuestos.",
-        "8. doc_type:",
-        "   - 'compra' si el RECEPTOR/CLIENTE de la factura es el negocio del usuario (gasto). Va al 606.",
-        "   - 'venta' si el EMISOR de la factura es el negocio del usuario (ingreso). Va al 607.",
-        "   - Si tienes contexto del cliente (su RNC), comparalo: si el RNC del cliente aparece como 'Cliente/Razon Social' del comprobante, es compra; si aparece como emisor, es venta.",
-        "   - Si dudas, elige 'compra' (caso mas comun).",
+        "8. doc_type (606 vs 607) — CAMPO CRITICO, decidelo con este procedimiento EXACTO:",
+        "   PASO 1: Identifica en el comprobante DOS partes:",
+        "     a) EMISOR = quien emite/vende (arriba, junto al logo/membrete; su RNC suele estar en el encabezado).",
+        "     b) RECEPTOR = a quien se factura (etiquetado 'Cliente', 'Facturar a', 'Senor(es)', 'RNC Cliente', 'Comprador').",
+        "   PASO 2: Si tienes el 'RNC del cliente' en el Contexto del cliente, COMPARALO con ambos RNC del comprobante (ignora guiones/espacios):",
+        "     - Coincide con el RNC del EMISOR  => 'venta' (607). El negocio esta VENDIENDO/facturando.",
+        "     - Coincide con el RNC del RECEPTOR => 'compra' (606). El negocio esta COMPRANDO/gastando.",
+        "   PASO 3: Si NO hay RNC de contexto o no coincide con ninguno, usa el nombre del negocio del cliente (business_name) con la misma logica (emisor=venta, receptor=compra).",
+        "   PASO 4: Si aun asi no puedes ubicar al cliente en el comprobante, usa senales del documento: un ticket/recibo de consumo (supermercado, gasolina, restaurante, farmacia, ferreteria) casi siempre es 'compra' (606).",
+        "   PASO 5: Solo si TODO lo anterior es ambiguo, elige 'compra' (caso mas comun) y baja la confianza a <=0.6, y explica la duda en 'notes'.",
+        "   NUNCA decidas 606/607 por el tipo de NCF: un B01 puede ser compra o venta. Lo que manda es QUIEN es el cliente (emisor vs receptor).",
         "9. Fechas en formato ISO YYYY-MM-DD. Si la fecha es ambigua (ej '03/05/25'), asume formato DD/MM/AA y normaliza.",
         "10. Montos en formato decimal con punto. Sin signo de moneda. Sin separador de miles.",
         "11. counterparty_name: el nombre de la OTRA parte (no del cliente). En compras es el proveedor, en ventas es el cliente final.",
@@ -1281,15 +1287,26 @@ function aiApproveExtraction($extractionId, $approverId = null) {
 
     $taxType = $filingType === '606' ? ($e['expense_category'] ?: '09') : ($e['income_type'] ?: '01');
 
+    // Si la fila ya existia (re-aprobacion tras editar), detecta a que formulario
+    // pertenecia. Si cambio de tipo (606<->607) o de periodo, hay que MOVER la
+    // fila al nuevo formulario y recalcular tambien el formulario de origen.
+    $oldFilingId = null;
+    if (!empty($e['filing_row_id'])) {
+        $ofStmt = $pdo->prepare("SELECT filing_id FROM tax_filing_rows WHERE id=?");
+        $ofStmt->execute([$e['filing_row_id']]);
+        $oldFilingId = (int)$ofStmt->fetchColumn() ?: null;
+    }
+
     if (!empty($e['filing_row_id'])) {
         $pdo->prepare("UPDATE tax_filing_rows SET
-            rnc=?, ncf=?, ncf_modified=?, tax_type=?,
+            filing_id=?, rnc=?, ncf=?, ncf_modified=?, tax_type=?,
             identification_type=?, income_type=?, counterparty_name=?,
             payment_method=?, propina_legal=?, transporte=?,
             date_doc=?, date_payment=?, amount=?, itbis=?,
             isr_retention=?, itbis_retention=?, other_taxes=?
             WHERE id=?")
             ->execute([
+                $filingId,
                 $e['rnc'], $e['ncf'], $e['ncf_modified'], $taxType,
                 $e['identification_type'] ?: null,
                 $e['income_type'] ?: null,
@@ -1330,6 +1347,16 @@ function aiApproveExtraction($extractionId, $approverId = null) {
         ->execute([$approverId, $e['upload_id']]);
 
     recalcTaxFilingTotals($filingId);
+    // Si la fila venia de otro formulario (cambio de tipo 606<->607 o de periodo),
+    // recalcula tambien el formulario de origen que quedo sin esta fila, y su IT-1.
+    if ($oldFilingId && $oldFilingId !== (int)$filingId) {
+        recalcTaxFilingTotals($oldFilingId);
+        $oldInfo = $pdo->prepare("SELECT client_id, period FROM tax_filings WHERE id=?");
+        $oldInfo->execute([$oldFilingId]);
+        if ($oldRow = $oldInfo->fetch()) {
+            recalcIT1ForClient((int)$oldRow['client_id'], (string)$oldRow['period']);
+        }
+    }
     recalcIT1ForClient((int)$e['client_id'], $period);
 
     // Notificacion al cliente (best-effort)

@@ -2,6 +2,12 @@
 require_once 'config.php';
 requireAuth('admin');
 requirePagePermission();
+// La informacion de la iguala es exclusiva del super-admin.
+if (!isSuperAdmin()) {
+    http_response_code(403);
+    echo '<div style="font-family:system-ui;padding:40px;text-align:center"><h1>Acceso denegado</h1><p>Solo el administrador principal puede ver la informacion de igualas.</p><a href="admin_dashboard.php">Volver</a></div>';
+    exit;
+}
 
 $success = $error = null;
 $months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];

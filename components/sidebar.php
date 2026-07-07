@@ -93,6 +93,10 @@ if ($isAdmin) {
         $allowed = [];
         foreach ($items as $item) {
             $pageName = $item['url'];
+            // Igualas es exclusivo del super-admin, sin importar permisos.
+            if ($pageName === 'admin_igualas.php' && !isSuperAdmin()) {
+                continue;
+            }
             $perm = $permMap[$pageName] ?? null;
             if ($perm === null || currentUserHasPermission($perm)) {
                 $allowed[] = $item;

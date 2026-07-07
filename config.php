@@ -795,6 +795,17 @@ function canAccessArea($roleSlug, $requiredArea) {
     return getRoleAccessLevel($roleSlug) === $requiredArea;
 }
 
+/**
+ * True solo para el super-administrador (rol slug 'admin', con todos los
+ * permisos e inmutable). Los demas roles staff, aunque tengan nivel 'admin',
+ * NO son super-admin. Se usa para blindar informacion sensible (p.ej. el monto
+ * de la iguala) que solo el super-admin puede ver.
+ */
+function isSuperAdmin($roleSlug = null) {
+    if ($roleSlug === null) $roleSlug = $_SESSION['role'] ?? '';
+    return $roleSlug === 'admin';
+}
+
 // =========================================================================
 // RBAC: permisos granulares por modulo + scoping de clientes a usuarios
 // =========================================================================

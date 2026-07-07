@@ -28,8 +28,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $address = trim($_POST['address'] ?? '');
         $started_at = $_POST['started_at'] ?? null;
         $notes = trim($_POST['notes'] ?? '');
-        $iguala_amount = (float)($_POST['iguala_amount'] ?? 0);
-        $iguala_frequency = $_POST['iguala_frequency'] ?? 'mensual';
+        // Iguala: solo el super-admin puede leer/editar el monto. Para el resto
+        // de roles se conservan los valores actuales (nunca se sobreescriben).
+        if (isSuperAdmin()) {
+            $iguala_amount = (float)($_POST['iguala_amount'] ?? 0);
+            $iguala_frequency = $_POST['iguala_frequency'] ?? 'mensual';
+        } else {
+            $cur = $pdo->prepare("SELECT iguala_amount, iguala_frequency FROM users WHERE id=?");
+            $cur->execute([$client_id]);
+            $curRow = $cur->fetch() ?: [];
+            $iguala_amount = (float)($curRow['iguala_amount'] ?? 0);
+            $iguala_frequency = $curRow['iguala_frequency'] ?? 'mensual';
+        }
         $tax_regime = $_POST['tax_regime'] ?? 'ordinario';
         $economic_activity = trim($_POST['economic_activity'] ?? '');
         $fiscal_year_close = $_POST['fiscal_year_close'] ?? '12-31';
@@ -235,11 +245,13 @@ include 'components/layout_start.php';
         </div>
 
         <div class="lg:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <?php if (isSuperAdmin()): ?>
             <div class="rounded-xl bg-stone-50 px-3 py-2.5">
                 <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Iguala</p>
                 <p class="text-sm font-extrabold text-slate-900">RD$ <?= number_format((float)$client['iguala_amount'], 0) ?></p>
                 <p class="text-[10px] text-slate-400"><?= htmlspecialchars($frequencies[$client['iguala_frequency']] ?? $client['iguala_frequency'] ?? 'mensual') ?></p>
             </div>
+            <?php endif; ?>
             <div class="rounded-xl bg-stone-50 px-3 py-2.5">
                 <p class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Tramites</p>
                 <p class="text-sm font-extrabold text-slate-900"><?= count($requests) ?></p>
@@ -711,6 +723,7 @@ include 'components/layout_start.php';
                         <p class="mt-2 text-[11px] text-slate-400 leading-snug">Al guardar, las obligaciones DGII se re-sincronizan segun el perfil.</p>
                     </div>
 
+                    <?php if (isSuperAdmin()): ?>
                     <div>
                         <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3">Iguala</p>
                         <div class="grid grid-cols-2 gap-3">
@@ -728,6 +741,7 @@ include 'components/layout_start.php';
                             </div>
                         </div>
                     </div>
+                    <?php endif; ?>
                     <div>
                         <label class="field-label">Notas internas</label>
                         <textarea name="notes" rows="3" class="field"><?= htmlspecialchars($client['notes'] ?? '') ?></textarea>
