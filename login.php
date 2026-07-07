@@ -65,14 +65,8 @@ $companySlogan   = trim(getSetting('company_slogan', 'Tu asesoria financiera a u
         <!-- Illustration / brand panel -->
         <div class="panel-illustration relative hidden lg:flex lg:col-span-2 flex-col justify-between p-10 text-white overflow-hidden">
             <div class="relative z-10">
-                <div class="flex items-center gap-3">
-                    <div class="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center font-extrabold tracking-tight">
-                        <?= htmlspecialchars(strtoupper(substr($companyInitials, 0, 2))) ?>
-                    </div>
-                    <div>
-                        <p class="font-bold text-[15px] leading-tight"><?= htmlspecialchars($companyName) ?></p>
-                        <p class="text-xs text-blue-200/80">Portal de gestion</p>
-                    </div>
+                <div class="inline-flex items-center bg-white rounded-2xl px-4 py-2.5 shadow-lg">
+                    <img src="LOGO.png" alt="<?= htmlspecialchars($companyName) ?>" class="h-9 w-auto">
                 </div>
             </div>
 
@@ -113,6 +107,7 @@ $companySlogan   = trim(getSetting('company_slogan', 'Tu asesoria financiera a u
         <div class="lg:col-span-3 p-8 sm:p-12 lg:p-16 flex flex-col justify-center">
             <div class="max-w-sm w-full mx-auto">
                 <div class="mb-8">
+                    <img src="LOGO.png" alt="<?= htmlspecialchars($companyName) ?>" class="h-11 w-auto mb-6 lg:hidden">
                     <span class="inline-flex items-center gap-2 rounded-full bg-stone-100 px-3 py-1 text-[11px] font-bold text-slate-600 uppercase tracking-wider">Bienvenido</span>
                     <h1 class="mt-4 text-3xl font-extrabold text-slate-900 tracking-tight">Inicia sesion</h1>
                     <p class="mt-2 text-sm text-slate-500"><?= htmlspecialchars($companySlogan) ?: 'Ingresa al portal con tus credenciales.' ?></p>
@@ -141,7 +136,8 @@ $companySlogan   = trim(getSetting('company_slogan', 'Tu asesoria financiera a u
                     </div>
 
                     <button type="submit"
-                            class="w-full mt-4 rounded-2xl bg-slate-900 text-white py-3.5 text-sm font-bold tracking-wide hover:bg-slate-800 transition-all hover:shadow-lg">
+                            class="w-full mt-4 rounded-2xl text-white py-3.5 text-sm font-bold tracking-wide transition-all hover:shadow-lg"
+                            style="background:#1B5FA8;" onmouseover="this.style.background='#123A6B'" onmouseout="this.style.background='#1B5FA8'">
                         Entrar al portal
                     </button>
                 </form>

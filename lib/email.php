@@ -99,7 +99,7 @@ function logEmailDelivery($to, $subject, $ok, $code, $response, $error, $kind = 
  */
 function renderEmailBase($headline, $bodyHtml, $ctaUrl = null, $ctaLabel = null) {
     $companyName     = htmlspecialchars(getSetting('company_name', 'Portal Asesoria'));
-    $companyInitials = htmlspecialchars(strtoupper(substr(getSetting('company_initials', 'AF'), 0, 2)));
+    $logoUrl         = htmlspecialchars(brandLogoUrl());
     $companyEmail    = htmlspecialchars(getSetting('company_email', ''));
     $companyPhone    = htmlspecialchars(getSetting('company_phone', ''));
     $companyRnc      = htmlspecialchars(getSetting('company_rnc', ''));
@@ -110,7 +110,7 @@ function renderEmailBase($headline, $bodyHtml, $ctaUrl = null, $ctaLabel = null)
         $cta = "
         <table cellpadding='0' cellspacing='0' style='margin:24px 0;'>
             <tr><td>
-                <a href='" . htmlspecialchars($ctaUrl) . "' style='display:inline-block;background:#0F172A;color:#fff;text-decoration:none;padding:13px 26px;border-radius:14px;font-weight:700;font-size:14px;'>" . htmlspecialchars($ctaLabel) . "</a>
+                <a href='" . htmlspecialchars($ctaUrl) . "' style='display:inline-block;background:#1B5FA8;color:#fff;text-decoration:none;padding:13px 26px;border-radius:14px;font-weight:700;font-size:14px;'>" . htmlspecialchars($ctaLabel) . "</a>
             </td></tr>
         </table>";
     }
@@ -136,15 +136,17 @@ function renderEmailBase($headline, $bodyHtml, $ctaUrl = null, $ctaLabel = null)
             <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #EEF0F2;">
                 <!-- Header -->
                 <tr>
-                    <td style="padding:22px 26px;background:#0F172A;color:#fff;">
+                    <td style="padding:22px 26px;background:#123A6B;color:#fff;border-bottom:4px solid #F2872E;">
                         <table cellpadding="0" cellspacing="0" border="0" width="100%">
                             <tr>
-                                <td style="width:44px;vertical-align:middle;">
-                                    <div style="width:40px;height:40px;background:rgba(255,255,255,0.15);border-radius:12px;text-align:center;line-height:40px;font-weight:800;font-size:13px;letter-spacing:0.5px;">{$companyInitials}</div>
+                                <td style="width:150px;vertical-align:middle;">
+                                    <span style="display:inline-block;background:#ffffff;border-radius:10px;padding:8px 12px;">
+                                        <img src="{$logoUrl}" alt="{$companyName}" height="34" style="height:34px;width:auto;display:block;border:0;">
+                                    </span>
                                 </td>
-                                <td style="padding-left:12px;vertical-align:middle;">
+                                <td style="padding-left:14px;vertical-align:middle;">
                                     <div style="font-weight:700;font-size:15px;line-height:1.2;">{$companyName}</div>
-                                    <div style="font-size:11px;color:#94A3B8;line-height:1.2;margin-top:2px;">Portal de gestion fiscal y tributaria</div>
+                                    <div style="font-size:11px;color:#AFC7E6;line-height:1.2;margin-top:2px;">Portal de gestion fiscal y tributaria</div>
                                 </td>
                             </tr>
                         </table>

@@ -1259,4 +1259,48 @@ function getSetting($key, $default = '') {
     $cache = loadAllSettings();
     return array_key_exists($key, $cache) ? $cache[$key] : $default;
 }
+
+// =========================================================================
+// Marca / Branding (AMD Accounting Consulting) — LOGO.png fijo
+// =========================================================================
+
+/** Ruta absoluta en disco del logo. */
+function brandLogoPath() {
+    return __DIR__ . '/LOGO.png';
+}
+
+/** URL absoluta del logo (para emails y clientes externos). */
+function brandLogoUrl() {
+    $base = rtrim(getSetting('portal_url', ''), '/');
+    return ($base !== '' ? $base : '') . '/LOGO.png';
+}
+
+/**
+ * Logo como data URI base64 — para incrustarlo en PDFs (dompdf) y correos
+ * sin depender de una URL accesible. Cacheado por request.
+ */
+function brandLogoDataUri() {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    $p = brandLogoPath();
+    if (is_file($p)) {
+        $data = @file_get_contents($p);
+        if ($data !== false) {
+            return $cache = 'data:image/png;base64,' . base64_encode($data);
+        }
+    }
+    return $cache = '';
+}
+
+/** Paleta de colores de la marca (derivada del logo AMD: azul + naranja). */
+function brandColors() {
+    return [
+        'blue_900'   => '#123A6B', // azul navy (letras AMD)
+        'blue_700'   => '#1B5FA8', // azul principal
+        'blue_500'   => '#2B8FD0', // azul claro (arco)
+        'orange'     => '#F2872E', // naranja (swoosh)
+        'orange_600' => '#E56F17', // naranja oscuro
+        'ink'        => '#0F172A',
+    ];
+}
 ?>

@@ -20,15 +20,15 @@ $isLoggedIn  = isset($_SESSION['user_id']);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
-    <meta name="theme-color" content="#0F172A" media="(prefers-color-scheme: dark)">
-    <meta name="theme-color" content="#0F172A">
+    <meta name="theme-color" content="#123A6B" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#123A6B">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="<?= htmlspecialchars($companyName) ?>">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="format-detection" content="telephone=no">
     <meta name="application-name" content="<?= htmlspecialchars($companyName) ?>">
-    <meta name="msapplication-TileColor" content="#0F172A">
+    <meta name="msapplication-TileColor" content="#123A6B">
     <meta name="msapplication-tap-highlight" content="no">
     <link rel="manifest" href="manifest.php">
     <link rel="icon" type="image/svg+xml" href="pwa_icon.php?size=192">
@@ -47,6 +47,12 @@ $isLoggedIn  = isset($_SESSION['user_id']);
         :root {
             --app-bg: #ECECEC;
             --shell-radius: 28px;
+            /* Marca AMD (azul + naranja) */
+            --brand-blue-900: #123A6B;
+            --brand-blue-700: #1B5FA8;
+            --brand-blue-500: #2B8FD0;
+            --brand-orange:   #F2872E;
+            --brand-orange-600: #E56F17;
         }
         html, body { background: var(--app-bg); }
         body { font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; color: #0F172A; }
@@ -56,16 +62,17 @@ $isLoggedIn  = isset($_SESSION['user_id']);
             box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
         }
         .nav-item-active {
-            background: #F4F4F5;
-            color: #0F172A;
+            background: #EAF2FB;
+            color: var(--brand-blue-900);
             font-weight: 600;
+            box-shadow: inset 3px 0 0 var(--brand-orange);
         }
-        .nav-item-active .nav-icon { color: #2563EB; }
+        .nav-item-active .nav-icon { color: var(--brand-blue-700); }
         .stat-card { background: #fff; border: 1px solid #F1F1F3; border-radius: 22px; }
         .surface-card { background: #fff; border: 1px solid #EEF0F2; border-radius: 22px; }
         .pill-soft { background: #F4F4F5; color: #475569; font-weight: 500; }
-        .btn-dark { background: #0F172A; color: #fff; border-radius: 14px; padding: 9px 16px; font-weight: 600; font-size: 13px; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; }
-        .btn-dark:hover { background: #1E293B; transform: translateY(-1px); }
+        .btn-dark { background: var(--brand-blue-700); color: #fff; border-radius: 14px; padding: 9px 16px; font-weight: 600; font-size: 13px; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-dark:hover { background: var(--brand-blue-900); transform: translateY(-1px); }
         .btn-soft { background: #fff; color: #1E293B; border: 1px solid #E5E7EB; border-radius: 14px; padding: 9px 16px; font-weight: 600; font-size: 13px; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; }
         .btn-soft:hover { background: #F8FAFC; }
         .btn-ghost { background: transparent; color: #475569; border-radius: 12px; padding: 8px 12px; font-weight: 500; transition: all .15s ease; }
@@ -80,7 +87,7 @@ $isLoggedIn  = isset($_SESSION['user_id']);
             color: #0F172A;
             transition: all .15s ease;
         }
-        .field:focus { outline: none; border-color: #0F172A; box-shadow: 0 0 0 4px rgba(15,23,42,0.06); }
+        .field:focus { outline: none; border-color: var(--brand-blue-700); box-shadow: 0 0 0 4px rgba(27,95,168,0.12); }
         .field-label { font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 5px; display: block; letter-spacing: 0.04em; text-transform: uppercase; }
         .badge-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #F4F4F5; color: #475569; white-space: nowrap; }
         .badge-dot::before { content: ''; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
@@ -109,6 +116,7 @@ $isLoggedIn  = isset($_SESSION['user_id']);
         /* === Sidebar default (expanded) === */
         .sidebar { width: 260px; }
         @media (min-width: 1024px) { .sidebar { width: 260px; } }
+        .sb-logo { height: 40px; width: auto; max-width: 172px; }
         .sb-collapse-btn {
             width: 30px; height: 30px; border-radius: 10px; background: #F4F4F5; color: #475569;
             display: inline-flex; align-items: center; justify-content: center;
@@ -120,6 +128,8 @@ $isLoggedIn  = isset($_SESSION['user_id']);
         @media (min-width: 1024px) {
             body.sidebar-collapsed .sidebar { width: 76px; padding-left: 12px; padding-right: 12px; }
             body.sidebar-collapsed .sb-brand { display: none; }
+            body.sidebar-collapsed .sb-brandbar { flex-direction: column; gap: 10px; }
+            body.sidebar-collapsed .sb-logo { max-width: 100%; height: auto; }
             body.sidebar-collapsed .sb-collapse-btn { margin-left: 0; }
             body.sidebar-collapsed .sb-collapse-btn svg { transform: rotate(180deg); }
             body.sidebar-collapsed .sb-group-header { display: none; }
@@ -285,7 +295,7 @@ $isLoggedIn  = isset($_SESSION['user_id']);
             .btn-dark:hover, .btn-soft:hover { transform: none; }
         }
         /* Loading state global */
-        .pwa-page-loading { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: #0F172A; z-index: 9999; transform-origin: left; animation: pwaLoadBar 1s ease-in-out infinite; display: none; }
+        .pwa-page-loading { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: var(--brand-orange); z-index: 9999; transform-origin: left; animation: pwaLoadBar 1s ease-in-out infinite; display: none; }
         .pwa-page-loading.is-active { display: block; }
         @keyframes pwaLoadBar { 0% { transform: scaleX(0); } 50% { transform: scaleX(0.6); } 100% { transform: scaleX(1); } }
 

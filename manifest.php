@@ -33,7 +33,7 @@ echo json_encode([
     'display_override' => ['window-controls-overlay', 'standalone', 'minimal-ui'],
     'orientation'      => 'portrait-primary',
     'background_color' => '#ECECEC',
-    'theme_color'      => '#0F172A',
+    'theme_color'      => '#123A6B',
     'lang'             => 'es-DO',
     'dir'              => 'ltr',
     'categories'       => ['business', 'finance', 'productivity'],

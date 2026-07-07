@@ -117,16 +117,9 @@ $whatsappSupport = trim(getSetting('company_phone', ''));
               transform -translate-x-full lg:translate-x-0 transition-all duration-200 ease-out
               shadow-2xl lg:shadow-none">
     <!-- Logo + collapse toggle -->
-    <div class="flex items-center gap-3 px-1 pb-5 border-b border-stone-200/70">
-        <div class="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-extrabold text-sm tracking-tight shrink-0">
-            <?= htmlspecialchars(strtoupper(substr($companyInitials, 0, 2))) ?>
-        </div>
-        <div class="sb-brand min-w-0">
-            <p class="text-[15px] font-bold text-slate-900 truncate leading-tight"><?= htmlspecialchars($companyName) ?></p>
-            <?php if ($companySlogan): ?>
-            <p class="text-[11px] text-slate-400 truncate"><?= htmlspecialchars($companySlogan) ?></p>
-            <?php endif; ?>
-        </div>
+    <div class="sb-brandbar flex items-center gap-2 px-1 pb-5 border-b border-stone-200/70">
+        <img src="LOGO.png" alt="<?= htmlspecialchars($companyName) ?>"
+             class="sb-logo object-contain shrink-0" />
         <button type="button" onclick="toggleSidebar()" class="sb-collapse-btn hidden lg:inline-flex" title="Colapsar/expandir menu">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
         </button>
