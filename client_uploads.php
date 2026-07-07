@@ -52,9 +52,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
                 // Try to fix via getimagesize for images that arrive as application/octet-stream
                 $info = @getimagesize($tmp);
                 if ($info && !empty($info['mime'])) $mime = $info['mime'];
+                elseif (strtolower(pathinfo($orig, PATHINFO_EXTENSION)) === 'pdf') $mime = 'application/pdf';
             }
-            if (!in_array($mime, aiAcceptedMimes(), true) || !aiIsImageMime($mime)) {
-                $failed[] = $orig . ' (formato no permitido, sube JPG/PNG/WEBP)';
+            if (!in_array($mime, aiAcceptedMimes(), true)) {
+                $failed[] = $orig . ' (formato no permitido, sube JPG/PNG/WEBP o PDF)';
                 continue;
             }
             if ($size > $maxBytes) {
@@ -235,7 +236,7 @@ include 'components/layout_start.php';
             <h3 class="cu-upload-title">Sube tus facturas</h3>
             <p class="cu-upload-desc">Toma una foto a tu factura o suelta el archivo aqui. Extraemos RNC, NCF, ITBIS y total automaticamente.</p>
             <div class="cu-upload-pills">
-                <span class="cu-mini-pill">JPG · PNG · WEBP · HEIC</span>
+                <span class="cu-mini-pill">JPG · PNG · WEBP · HEIC · PDF</span>
                 <span class="cu-mini-pill">Multiple a la vez</span>
                 <span class="cu-mini-pill">Hasta <?= htmlspecialchars(getSetting('openai_max_size_mb', '12')) ?>MB c/u</span>
             </div>
@@ -246,7 +247,7 @@ include 'components/layout_start.php';
         <input type="hidden" name="action" value="upload">
 
         <label class="cu-dropzone" id="dropZone">
-            <input type="file" name="files[]" id="fileInput" accept="image/*" multiple class="hidden">
+            <input type="file" name="files[]" id="fileInput" accept="image/*,application/pdf,.pdf" multiple class="hidden">
             <div class="cu-dropzone-icon">
                 <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
             </div>

@@ -381,8 +381,8 @@ function aiIsImageMime($mime) {
 
 /**
  * Encode a file as base64 data URL for the OpenAI Chat Completions API.
- * Handles images directly. PDFs are NOT supported by the chat vision endpoint,
- * so we surface an error early for those.
+ * Sirve para imagenes (image_url) y para PDF (file_data). El data URI lleva el
+ * mime real, y aiBuildPayload decide como enviarlo segun sea imagen o PDF.
  */
 function aiFileToDataUrl($absPath, $mime) {
     if (!is_file($absPath)) {
@@ -695,8 +695,8 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
     $cfg = aiOpenAIConfig();
     if (!$cfg['enabled'])  return ['ok' => false, 'error' => 'IA deshabilitada en configuracion.'];
     if (!$cfg['api_key'])  return ['ok' => false, 'error' => 'OpenAI API key no configurada.'];
-    if (!aiIsImageMime($mime)) {
-        return ['ok' => false, 'error' => 'Formato no soportado. Sube una imagen JPG, PNG, WEBP o HEIC.'];
+    if (!aiIsImageMime($mime) && $mime !== 'application/pdf') {
+        return ['ok' => false, 'error' => 'Formato no soportado. Sube una imagen (JPG, PNG, WEBP, HEIC) o un PDF.'];
     }
 
     $enc = aiFileToDataUrl($absPath, $mime);
@@ -727,16 +727,22 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
 
 /**
  * Construye el payload de la API para un modelo dado.
+ * Soporta imagenes (image_url) y PDF (content-part 'file' con file_data base64,
+ * soportado por gpt-4o / gpt-4.1: el modelo lee texto + renderiza cada pagina).
  */
 function aiBuildPayload($model, $dataUrl, $hintBlock) {
+    $isPdf = strncmp($dataUrl, 'data:application/pdf', 20) === 0;
+    $userText = ['type' => 'text', 'text' => "Extrae LITERALMENTE los datos de esta factura para los formularios 606, 607 e IT-1 de la DGII. Si un campo NO aparece claramente en el documento, dejalo vacio o 0. NO INVENTES valores. Si el documento tiene varias paginas, extrae la factura principal. Devuelve solo el JSON estricto." . $hintBlock];
+    if ($isPdf) {
+        $media = ['type' => 'file', 'file' => ['filename' => 'factura.pdf', 'file_data' => $dataUrl]];
+    } else {
+        $media = ['type' => 'image_url', 'image_url' => ['url' => $dataUrl, 'detail' => 'high']];
+    }
     return [
         'model' => $model,
         'messages' => [
             ['role' => 'system', 'content' => aiSystemPrompt()],
-            ['role' => 'user', 'content' => [
-                ['type' => 'text', 'text' => "Extrae LITERALMENTE los datos de esta factura para los formularios 606, 607 e IT-1 de la DGII. Si un campo NO aparece claramente en la imagen, dejalo vacio o 0. NO INVENTES valores. Devuelve solo el JSON estricto." . $hintBlock],
-                ['type' => 'image_url', 'image_url' => ['url' => $dataUrl, 'detail' => 'high']],
-            ]],
+            ['role' => 'user', 'content' => [$userText, $media]],
         ],
         'response_format' => [
             'type' => 'json_schema',

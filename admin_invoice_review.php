@@ -159,8 +159,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!in_array($mime, aiAcceptedMimes(), true)) {
                     $info = @getimagesize($tmp);
                     if ($info && !empty($info['mime'])) $mime = $info['mime'];
+                    elseif (strtolower(pathinfo($orig, PATHINFO_EXTENSION)) === 'pdf') $mime = 'application/pdf';
                 }
-                if (!in_array($mime, aiAcceptedMimes(), true) || !aiIsImageMime($mime)) { $fail[] = $orig . ' (formato no permitido)'; continue; }
+                if (!in_array($mime, aiAcceptedMimes(), true)) { $fail[] = $orig . ' (formato no permitido)'; continue; }
                 if ($size > $maxBytes) { $fail[] = $orig . " (excede {$maxMb} MB)"; continue; }
 
                 $tmpSha = @hash_file('sha256', $tmp);
@@ -379,8 +380,8 @@ include 'components/layout_start.php';
             <label class="block cursor-pointer rounded-2xl border-2 border-dashed border-stone-200 bg-stone-50 hover:border-blue-400 hover:bg-blue-50/40 transition-colors px-4 py-6 text-center" id="adminDropZone">
                 <svg class="w-6 h-6 mx-auto text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 100 18 9 9 0 000-18z"/></svg>
                 <p class="mt-1 text-sm font-semibold text-slate-700">Arrastra fotos aqui o haz click</p>
-                <p class="text-[11px] text-slate-400">JPG/PNG/WEBP. Multiple seleccion permitida.</p>
-                <input type="file" name="files[]" id="adminFileInput" accept="image/*" multiple class="hidden">
+                <p class="text-[11px] text-slate-400">JPG/PNG/WEBP o PDF. Multiple seleccion permitida.</p>
+                <input type="file" name="files[]" id="adminFileInput" accept="image/*,application/pdf,.pdf" multiple class="hidden">
             </label>
             <p id="adminFileSummary" class="mt-2 text-xs text-slate-500 hidden"></p>
         </div>
