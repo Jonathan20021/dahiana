@@ -23,6 +23,7 @@ $stmt = $pdo->prepare("
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND " . clientScopeWhere('u.id') . "
       AND (u.name LIKE ? OR u.business_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ? OR u.rnc LIKE ?)
     ORDER BY u.name
     LIMIT 10
@@ -55,7 +56,8 @@ $stmt = $pdo->prepare("
     FROM invoice_uploads u
     LEFT JOIN invoice_extractions e ON e.upload_id = u.id
     LEFT JOIN users c ON c.id = u.client_id
-    WHERE e.ncf LIKE ? OR e.counterparty_name LIKE ? OR e.rnc LIKE ? OR u.original_name LIKE ?
+    WHERE (e.ncf LIKE ? OR e.counterparty_name LIKE ? OR e.rnc LIKE ? OR u.original_name LIKE ?)
+      AND " . clientScopeWhere('u.client_id') . "
     ORDER BY u.created_at DESC
     LIMIT 10
 ");
@@ -95,7 +97,8 @@ $stmt = $pdo->prepare("
     FROM requests r
     JOIN services s ON s.id = r.service_id
     JOIN users u ON u.id = r.client_id
-    WHERE s.title LIKE ? OR u.name LIKE ?
+    WHERE (s.title LIKE ? OR u.name LIKE ?)
+      AND " . clientScopeWhere('r.client_id') . "
     ORDER BY r.created_at DESC
     LIMIT 8
 ");
@@ -126,6 +129,7 @@ if (strlen($q) >= 3) {
         WHERE (o.obligation_type LIKE ? OR u.name LIKE ?)
           AND o.status IN ('pendiente','vencido')
           AND o.dismissed_at IS NULL
+          AND " . clientScopeWhere('o.client_id') . "
         ORDER BY o.due_date ASC
         LIMIT 6
     ");

@@ -5,12 +5,17 @@ requirePagePermission();
 // El alta de clientes se hace desde admin_clients.php (form completo con perfil fiscal).
 // Aqui solo dejamos el dashboard mostrar metricas.
 
+// Scopes de clientes segun asignaciones del usuario actual (admin ve todo).
+$scopeUsers = clientScopeWhere('u.id');       // para consultas sobre la tabla users (alias u)
+$scopeReq   = clientScopeWhere('client_id');  // para requests / tax_obligations / invoices sin alias
+
 // 360 Metrics
 $totalClients = $pdo->query("
     SELECT COUNT(*)
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND {$scopeUsers}
 ")->fetchColumn();
 // Una sola consulta consolidada en vez de 3 COUNT(*) separados.
 $reqAgg = $pdo->query("
@@ -19,13 +24,14 @@ $reqAgg = $pdo->query("
         SUM(CASE WHEN status='en_proceso' THEN 1 ELSE 0 END) AS en_proceso,
         SUM(CASE WHEN status IN ('completado','presentado') THEN 1 ELSE 0 END) AS done
     FROM requests
+    WHERE {$scopeReq}
 ")->fetch() ?: ['pendiente'=>0,'en_proceso'=>0,'done'=>0];
 $pendingRequests   = (int)$reqAgg['pendiente'];
 $inProcessRequests = (int)$reqAgg['en_proceso'];
 $completedRequests = (int)$reqAgg['done'];
 
 // Status distribution
-$statusCounts = $pdo->query("SELECT status, COUNT(*) as count FROM requests GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
+$statusCounts = $pdo->query("SELECT status, COUNT(*) as count FROM requests WHERE {$scopeReq} GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
 $allStatuses = ['pendiente', 'en_proceso', 'en_revision', 'presentado', 'completado'];
 $chartStatusData = [];
 foreach ($allStatuses as $s) {
@@ -38,6 +44,7 @@ $growthData = $pdo->query("
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND {$scopeUsers}
       AND u.created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
     GROUP BY month
     ORDER BY month ASC
@@ -57,6 +64,7 @@ $recentActivity = $pdo->query("
     FROM requests r
     JOIN services s ON r.service_id = s.id
     JOIN users u ON r.client_id = u.id
+    WHERE " . clientScopeWhere('r.client_id') . "
     ORDER BY r.created_at DESC
     LIMIT 6
 ")->fetchAll();
@@ -72,6 +80,7 @@ $alertCounts = $pdo->query("
         SUM(CASE WHEN status='pendiente' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS month
     FROM tax_obligations
     WHERE dismissed_at IS NULL
+      AND {$scopeReq}
 ")->fetch();
 
 $scopeDash = clientScopeWhere('o.client_id');
@@ -92,6 +101,7 @@ $overdueInvoices = $pdo->query("
     SELECT COUNT(*) AS c, COALESCE(SUM(amount),0) AS total
     FROM invoices
     WHERE status='pendiente' AND due_date < CURDATE()
+      AND {$scopeReq}
 ")->fetch();
 
 // AI invoice metrics (current month)
@@ -108,6 +118,7 @@ $aiKpis = $pdo->prepare("
     FROM invoice_uploads u
     LEFT JOIN invoice_extractions e ON e.upload_id = u.id
     WHERE (e.period = ? OR (e.period IS NULL AND DATE_FORMAT(u.created_at,'%Y-%m') = ?))
+      AND " . clientScopeWhere('u.client_id') . "
 ");
 $aiKpis->execute([$aiPeriod, $aiPeriod]);
 $ai = $aiKpis->fetch() ?: ['total'=>0,'approved'=>0,'pending'=>0,'errors'=>0,'via_telegram'=>0,'itbis_compras'=>0,'itbis_ventas'=>0];
@@ -124,6 +135,7 @@ $recentInvoices = $pdo->query("
     LEFT JOIN invoice_extractions e ON e.upload_id = u.id
     LEFT JOIN users c ON c.id = u.client_id
     WHERE u.status IN ('extracted','approved','error')
+      AND " . clientScopeWhere('u.client_id') . "
     ORDER BY u.created_at DESC
     LIMIT 6
 ")->fetchAll();
@@ -135,6 +147,7 @@ $stmt = $pdo->query("
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND {$scopeUsers}
     ORDER BY u.created_at DESC
 ");
 $clients = $stmt->fetchAll();

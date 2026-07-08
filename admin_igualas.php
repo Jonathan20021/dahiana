@@ -57,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             FROM users u
             LEFT JOIN roles r ON r.slug = u.role
             WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+              AND " . clientScopeWhere('u.id') . "
               AND u.iguala_amount > 0
               AND (u.client_status IS NULL OR u.client_status = 'activo')
               AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.client_id = u.id AND i.period = " . $pdo->quote($period) . ")
@@ -106,6 +107,7 @@ $clients = $pdo->prepare("
     LEFT JOIN roles r ON r.slug = u.role
     LEFT JOIN invoices i ON i.client_id = u.id AND i.period = ?
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND " . clientScopeWhere('u.id') . "
       AND u.iguala_amount > 0
     ORDER BY
         CASE
