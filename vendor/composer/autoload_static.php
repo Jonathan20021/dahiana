@@ -7,6 +7,8 @@ namespace Composer\Autoload;
 class ComposerStaticInitac2d307f4ed514763a8119f3523066bb
 {
     public static $files = array (
+        'a4a119a56e50fbb293281d9a48007e0e' => __DIR__ . '/..' . '/symfony/polyfill-php80/bootstrap.php',
+        '5897ea0ac4cccf14d323035e65887801' => __DIR__ . '/..' . '/symfony/polyfill-php82/bootstrap.php',
         '72243e5536b63e298acb6476f01f1aff' => __DIR__ . '/..' . '/thecodingmachine/safe/lib/special_cases.php',
         '3f648889e687f31c52f949ba8a9d0873' => __DIR__ . '/..' . '/thecodingmachine/safe/generated/apache.php',
         'eeb4581d958421a4244aaa4167c6a575' => __DIR__ . '/..' . '/thecodingmachine/safe/generated/apcu.php',
@@ -89,17 +91,36 @@ class ComposerStaticInitac2d307f4ed514763a8119f3523066bb
         '356736db98a6834f0a886b8d509b0ecd' => __DIR__ . '/..' . '/thecodingmachine/safe/generated/zlib.php',
         '0174385c3be07e86008907d06ee66531' => __DIR__ . '/..' . '/sabberworm/php-css-parser/src/Rule/Rule.php',
         '98aea6e41b9cb79b379b10f37ba1f0b7' => __DIR__ . '/..' . '/sabberworm/php-css-parser/src/RuleSet/RuleContainer.php',
+        '4b3d45d99f6e4eb65ea80c00519736e4' => __DIR__ . '/..' . '/anthropic-ai/sdk/src/Version.php',
     );
 
     public static $prefixLengthsPsr4 = array (
         'S' =>
         array (
+            'Symfony\\Polyfill\\Php82\\' => 23,
+            'Symfony\\Polyfill\\Php80\\' => 23,
             'Svg\\' => 4,
+            'StandardWebhooks\\' => 17,
             'Sabberworm\\CSS\\' => 15,
+        ),
+        'P' =>
+        array (
+            'Psr\\Http\\Message\\' => 17,
+            'Psr\\Http\\Client\\' => 16,
         ),
         'M' =>
         array (
             'Masterminds\\' => 12,
+        ),
+        'H' =>
+        array (
+            'Http\\Discovery\\' => 15,
+        ),
+        'G' =>
+        array (
+            'GuzzleHttp\\Psr7\\' => 16,
+            'GuzzleHttp\\Promise\\' => 19,
+            'GuzzleHttp\\' => 11,
         ),
         'F' =>
         array (
@@ -109,20 +130,61 @@ class ComposerStaticInitac2d307f4ed514763a8119f3523066bb
         array (
             'Dompdf\\' => 7,
         ),
+        'A' =>
+        array (
+            'Anthropic\\' => 10,
+        ),
     );
 
     public static $prefixDirsPsr4 = array (
+        'Symfony\\Polyfill\\Php82\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/symfony/polyfill-php82',
+        ),
+        'Symfony\\Polyfill\\Php80\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/symfony/polyfill-php80',
+        ),
         'Svg\\' =>
         array (
             0 => __DIR__ . '/..' . '/dompdf/php-svg-lib/src/Svg',
+        ),
+        'StandardWebhooks\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/standard-webhooks/standard-webhooks/libraries/php/src',
         ),
         'Sabberworm\\CSS\\' =>
         array (
             0 => __DIR__ . '/..' . '/sabberworm/php-css-parser/src',
         ),
+        'Psr\\Http\\Message\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/psr/http-factory/src',
+            1 => __DIR__ . '/..' . '/psr/http-message/src',
+        ),
+        'Psr\\Http\\Client\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/psr/http-client/src',
+        ),
         'Masterminds\\' =>
         array (
             0 => __DIR__ . '/..' . '/masterminds/html5/src',
+        ),
+        'Http\\Discovery\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/php-http/discovery/src',
+        ),
+        'GuzzleHttp\\Psr7\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/guzzlehttp/psr7/src',
+        ),
+        'GuzzleHttp\\Promise\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/guzzlehttp/promises/src',
+        ),
+        'GuzzleHttp\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/guzzlehttp/guzzle/src',
         ),
         'FontLib\\' =>
         array (
@@ -132,11 +194,24 @@ class ComposerStaticInitac2d307f4ed514763a8119f3523066bb
         array (
             0 => __DIR__ . '/..' . '/dompdf/dompdf/src',
         ),
+        'Anthropic\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/anthropic-ai/sdk/src',
+        ),
     );
 
     public static $classMap = array (
+        'AllowDynamicProperties' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/AllowDynamicProperties.php',
+        'Attribute' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/Attribute.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
         'Dompdf\\Cpdf' => __DIR__ . '/..' . '/dompdf/dompdf/lib/Cpdf.php',
+        'PhpToken' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/PhpToken.php',
+        'Random\\BrokenRandomEngineError' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/Random/BrokenRandomEngineError.php',
+        'Random\\CryptoSafeEngine' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/Random/CryptoSafeEngine.php',
+        'Random\\Engine' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/Random/Engine.php',
+        'Random\\Engine\\Secure' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/Random/Engine/Secure.php',
+        'Random\\RandomError' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/Random/RandomError.php',
+        'Random\\RandomException' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/Random/RandomException.php',
         'Safe\\DateTime' => __DIR__ . '/..' . '/thecodingmachine/safe/lib/DateTime.php',
         'Safe\\DateTimeImmutable' => __DIR__ . '/..' . '/thecodingmachine/safe/lib/DateTimeImmutable.php',
         'Safe\\Exceptions\\ApacheException' => __DIR__ . '/..' . '/thecodingmachine/safe/generated/Exceptions/ApacheException.php',
@@ -220,6 +295,11 @@ class ComposerStaticInitac2d307f4ed514763a8119f3523066bb
         'Safe\\Exceptions\\YazException' => __DIR__ . '/..' . '/thecodingmachine/safe/generated/Exceptions/YazException.php',
         'Safe\\Exceptions\\ZipException' => __DIR__ . '/..' . '/thecodingmachine/safe/generated/Exceptions/ZipException.php',
         'Safe\\Exceptions\\ZlibException' => __DIR__ . '/..' . '/thecodingmachine/safe/generated/Exceptions/ZlibException.php',
+        'SensitiveParameter' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/SensitiveParameter.php',
+        'SensitiveParameterValue' => __DIR__ . '/..' . '/symfony/polyfill-php82/Resources/stubs/SensitiveParameterValue.php',
+        'Stringable' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/Stringable.php',
+        'UnhandledMatchError' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/UnhandledMatchError.php',
+        'ValueError' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/ValueError.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

@@ -6,6 +6,10 @@
 // API with vision-capable models (gpt-4o family by default) and a strict
 // JSON schema so the model only ever returns structured data.
 //
+// Si OpenAI no puede responder (sin credito, key invalida, servicio caido) la
+// extraccion cae al respaldo de Claude (Anthropic Messages API) con el mismo
+// system prompt y el mismo JSON schema. Ver aiExtractWithClaude().
+//
 // Entry points:
 //   - bootstrapAiInvoiceSchema()    Creates tables on demand (idempotent).
 //   - aiExtractInvoiceFromFile()    Calls OpenAI Vision on a single file.
@@ -197,6 +201,11 @@ function bootstrapAiInvoiceSchema() {
             'notify_invoice_approved' => '1',         // emails al cliente al aprobar
             'openai_consensus_enabled' => '1',        // valida con segundo modelo en paralelo
             'openai_secondary_model'   => 'gpt-4o-mini', // modelo de validacion cruzada
+            // Respaldo: si OpenAI falla (sin credito, key mala, caido) se
+            // reintenta la extraccion con Claude.
+            'anthropic_enabled' => '1',
+            'anthropic_api_key' => '',
+            'anthropic_model'   => 'claude-sonnet-5',
             'telegram_enabled' => '0',
             'telegram_bot_token' => '',
             'telegram_bot_username' => '',
@@ -405,6 +414,126 @@ function aiOpenAIConfig() {
         'api_key' => trim(getSetting('openai_api_key', '')),
         'model'   => trim(getSetting('openai_model', 'gpt-4.1')) ?: 'gpt-4.1',
     ];
+}
+
+// --------------------------------------------------------------------------
+// Anthropic (Claude) — proveedor de respaldo
+// Se usa cuando OpenAI no puede responder (sin credito, key invalida, caido).
+// --------------------------------------------------------------------------
+function aiAnthropicConfig() {
+    return [
+        'enabled' => getSetting('anthropic_enabled', '1') === '1',
+        'api_key' => trim(getSetting('anthropic_api_key', '')),
+        'model'   => trim(getSetting('anthropic_model', 'claude-sonnet-5')) ?: 'claude-sonnet-5',
+    ];
+}
+
+/**
+ * output_config.effort solo existe en Opus 4.5+ / Sonnet 4.6+ / Opus 5 / Sonnet 5.
+ * Mandarlo a Haiku 4.5 o Sonnet 4.5 devuelve un 400, asi que si alguien cambia
+ * el modelo desde el panel a uno viejo la llamada sigue funcionando sin effort.
+ */
+function aiAnthropicSupportsEffort($model) {
+    $m = strtolower((string)$model);
+    if (strpos($m, 'haiku') !== false) return false;
+    if (strpos($m, 'claude-3') === 0)  return false;
+    return strpos($m, 'sonnet-4-5') === false;
+}
+
+/** Mimes que la Messages API acepta como bloque de imagen. */
+function aiAnthropicSupports($mime) {
+    $mime = (string)$mime;
+    return $mime === 'application/pdf'
+        || in_array($mime, ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'], true);
+}
+
+/**
+ * Extraccion de respaldo con Claude. Usa el mismo system prompt y el mismo JSON
+ * schema que la ruta de OpenAI (structured outputs garantiza que el bloque de
+ * texto sea JSON valido contra el schema), asi que devuelve exactamente la
+ * misma estructura y pasa por el mismo aiNormalizeExtraction().
+ *
+ * Returns ['ok' => bool, 'data' => array|null, 'error' => string|null, 'tokens' => int]
+ */
+function aiExtractWithClaude($absPath, $mime, $hintBlock = '') {
+    $cfg = aiAnthropicConfig();
+    if (!$cfg['enabled']) return ['ok' => false, 'error' => 'respaldo deshabilitado en configuracion'];
+    if (!$cfg['api_key']) return ['ok' => false, 'error' => 'API key no configurada'];
+    if (!aiAnthropicSupports($mime)) {
+        return ['ok' => false, 'error' => 'no lee ' . $mime . ' (acepta JPG, PNG, GIF, WEBP o PDF)'];
+    }
+    if (!is_file($absPath)) return ['ok' => false, 'error' => 'archivo no encontrado'];
+    $bytes = @file_get_contents($absPath);
+    if ($bytes === false) return ['ok' => false, 'error' => 'no se pudo leer el archivo'];
+
+    $autoload = __DIR__ . '/../vendor/autoload.php';
+    if (!is_file($autoload)) return ['ok' => false, 'error' => 'SDK no instalado (corre composer install)'];
+    require_once $autoload;
+
+    $b64 = base64_encode($bytes);
+    if ($mime === 'application/pdf') {
+        $media = \Anthropic\Messages\DocumentBlockParam::with(
+            source: \Anthropic\Messages\Base64PDFSource::with(data: $b64),
+            title:  'factura.pdf',
+        );
+    } else {
+        // 'image/jpg' no es un media type valido en la API; normalizar a jpeg.
+        $mediaType = ($mime === 'image/jpg') ? 'image/jpeg' : $mime;
+        $media = \Anthropic\Messages\ImageBlockParam::with(
+            source: \Anthropic\Messages\Base64ImageSource::with(data: $b64, mediaType: $mediaType),
+        );
+    }
+
+    $prompt = \Anthropic\Messages\TextBlockParam::with(
+        text: "Extrae LITERALMENTE los datos de esta factura para los formularios 606, 607 e IT-1 de la DGII. Si un campo NO aparece claramente en el documento, dejalo vacio o 0. NO INVENTES valores. Si el documento tiene varias paginas, extrae la factura principal." . $hintBlock
+    );
+
+    $outputConfig = ['format' => ['type' => 'json_schema', 'schema' => aiInvoiceJsonSchema()]];
+    if (aiAnthropicSupportsEffort($cfg['model'])) $outputConfig['effort'] = 'medium';
+
+    try {
+        $client  = new \Anthropic\Client(apiKey: $cfg['api_key']);
+        $message = $client->messages->create(
+            model:     $cfg['model'],
+            // Con thinking adaptativo el presupuesto de salida incluye el
+            // razonamiento, por eso no se recorta a los ~900 tokens del JSON.
+            maxTokens: 8000,
+            // El system prompt (catalogos 606/607 completos) es ~6.7k tokens y
+            // es identico en cada factura: cachearlo baja el costo de entrada a
+            // 0.1x en las llamadas siguientes. Clave en el reproceso masivo,
+            // donde se encadenan muchas facturas seguidas.
+            system:    [
+                \Anthropic\Messages\TextBlockParam::with(
+                    text:         aiSystemPrompt(),
+                    cacheControl: ['type' => 'ephemeral'],
+                ),
+            ],
+            messages:  [
+                \Anthropic\Messages\MessageParam::with(role: 'user', content: [$media, $prompt]),
+            ],
+            outputConfig: $outputConfig,
+            // El default del SDK son 10 min: demasiado para una subida web.
+            requestOptions: ['timeout' => 60.0, 'maxRetries' => 1],
+        );
+    } catch (\Anthropic\Core\Exceptions\APIStatusException $e) {
+        return ['ok' => false, 'error' => 'HTTP ' . ($e->status ?? '?') . ' ' . $e->getMessage()];
+    } catch (\Throwable $e) {
+        return ['ok' => false, 'error' => $e->getMessage()];
+    }
+
+    if ($message->stopReason === 'refusal') {
+        return ['ok' => false, 'error' => 'documento rechazado (' . ($message->stopDetails?->category ?? 'sin categoria') . ')'];
+    }
+
+    $content = '';
+    foreach ($message->content as $block) {
+        if ($block->type === 'text') { $content = $block->text; break; }
+    }
+    $data = json_decode($content, true);
+    if (!is_array($data)) return ['ok' => false, 'error' => 'JSON no parseable'];
+
+    $tokens = (int)$message->usage->inputTokens + (int)$message->usage->outputTokens;
+    return ['ok' => true, 'data' => $data, 'tokens' => $tokens, 'raw' => $content];
 }
 
 function aiSystemPrompt() {
@@ -689,18 +818,18 @@ function aiNormalizeExtraction(array $data) {
 /**
  * Sends one image to OpenAI Vision and returns structured invoice data.
  * Adds: retry on transient errors, normalization, coherence check.
+ * Si OpenAI no puede responder (sin credito, key mala, caido) cae al respaldo
+ * de Claude para que la subida de facturas no se quede bloqueada.
  * Returns ['ok' => bool, 'data' => array|null, 'error' => string|null, 'tokens' => int]
  */
 function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
     $cfg = aiOpenAIConfig();
+    // openai_enabled es el switch maestro de la lectura con IA: si esta apagado
+    // no se llama a ningun proveedor, tampoco al respaldo.
     if (!$cfg['enabled'])  return ['ok' => false, 'error' => 'IA deshabilitada en configuracion.'];
-    if (!$cfg['api_key'])  return ['ok' => false, 'error' => 'OpenAI API key no configurada.'];
     if (!aiIsImageMime($mime) && $mime !== 'application/pdf') {
         return ['ok' => false, 'error' => 'Formato no soportado. Sube una imagen (JPG, PNG, WEBP, HEIC) o un PDF.'];
     }
-
-    $enc = aiFileToDataUrl($absPath, $mime);
-    if (isset($enc['error'])) return ['ok' => false, 'error' => $enc['error']];
 
     $hintLines = [];
     if (!empty($clientHint['business_name'])) $hintLines[] = "Negocio del cliente que sube la factura: " . $clientHint['business_name'];
@@ -709,20 +838,45 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
     if (!empty($clientHint['economic_activity'])) $hintLines[] = "Actividad economica: " . $clientHint['economic_activity'];
     $hintBlock = empty($hintLines) ? '' : "\n\nContexto del cliente:\n" . implode("\n", $hintLines);
 
-    // Decision: usar consensus multi-modelo o single-model
-    $consensusEnabled = getSetting('openai_consensus_enabled', '1') === '1';
-    $secondaryModel = trim(getSetting('openai_secondary_model', 'gpt-4o-mini')) ?: 'gpt-4o-mini';
+    if (!$cfg['api_key']) {
+        $openaiError = 'OpenAI API key no configurada';
+    } else {
+        $enc = aiFileToDataUrl($absPath, $mime);
+        if (isset($enc['error'])) return ['ok' => false, 'error' => $enc['error']];
 
-    if ($consensusEnabled && $secondaryModel && $secondaryModel !== $cfg['model']) {
-        return aiExtractWithConsensus($enc['data_url'], $hintBlock, $cfg, $secondaryModel);
+        // Decision: usar consensus multi-modelo o single-model
+        $consensusEnabled = getSetting('openai_consensus_enabled', '1') === '1';
+        $secondaryModel = trim(getSetting('openai_secondary_model', 'gpt-4o-mini')) ?: 'gpt-4o-mini';
+
+        if ($consensusEnabled && $secondaryModel && $secondaryModel !== $cfg['model']) {
+            $r = aiExtractWithConsensus($enc['data_url'], $hintBlock, $cfg, $secondaryModel);
+            if ($r['ok']) return $r; // aiBuildConsensus ya normaliza
+        } else {
+            // Single-model path
+            $payload = aiBuildPayload($cfg['model'], $enc['data_url'], $hintBlock);
+            $r = aiCallOpenAI($payload, $cfg['api_key'], 2);
+            if ($r['ok']) {
+                return [
+                    'ok'     => true,
+                    'data'   => aiNormalizeExtraction($r['data']),
+                    'tokens' => $r['tokens'],
+                    'raw'    => $r['raw'],
+                ];
+            }
+        }
+        $openaiError = $r['error'] ?? 'error desconocido';
     }
 
-    // Single-model path
-    $payload = aiBuildPayload($cfg['model'], $enc['data_url'], $hintBlock);
-    $r = aiCallOpenAI($payload, $cfg['api_key'], 2);
-    if (!$r['ok']) return $r;
-    $data = aiNormalizeExtraction($r['data']);
-    return ['ok' => true, 'data' => $data, 'tokens' => $r['tokens'], 'raw' => $r['raw']];
+    // Respaldo con Claude.
+    $fb = aiExtractWithClaude($absPath, $mime, $hintBlock);
+    if (!$fb['ok']) {
+        return ['ok' => false, 'error' => 'OpenAI: ' . $openaiError . ' | Respaldo Claude: ' . $fb['error']];
+    }
+    $data = aiNormalizeExtraction($fb['data']);
+    $data['_warnings'] = array_merge($data['_warnings'] ?? [], [
+        'OpenAI fallo (' . $openaiError . '). Extraido con ' . aiAnthropicConfig()['model'] . ' sin validacion cruzada: revisa los campos.',
+    ]);
+    return ['ok' => true, 'data' => $data, 'tokens' => $fb['tokens'], 'raw' => $fb['raw']];
 }
 
 /**
@@ -1092,6 +1246,11 @@ function aiCreateUploadRecord($clientId, $fileMeta, $docTypeHint = 'auto', $uplo
  */
 function aiProcessUpload($uploadId) {
     global $pdo;
+    // Una extraccion puede encadenar el intento de OpenAI y el respaldo de
+    // Claude; con el default de 30-120s del php.ini el request se cortaria a
+    // medias y la factura quedaria en 'processing'. En un reproceso masivo el
+    // contador se reinicia en cada llamada, que es justo lo que queremos.
+    @set_time_limit(180);
 
     $u = $pdo->prepare("SELECT * FROM invoice_uploads WHERE id = ?");
     $u->execute([$uploadId]);

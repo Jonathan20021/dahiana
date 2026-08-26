@@ -10,7 +10,7 @@ $defaultInvoiceTemplate = "Hola {{client_name}}, {{greeting}}. Tienes un volante
 $defaultRequestTemplate = "Hola {{client_name}}, {{greeting}} para recordarte que el tramite de *{{request_title}}* se encuentra actualmente *{{status_text}}*.";
 
 // Campos que son secretos: si se envia el valor enmascarado (placeholder), NO se sobreescribe.
-$secretFields = ['openai_api_key', 'resend_api_key', 'telegram_bot_token', 'telegram_webhook_secret'];
+$secretFields = ['openai_api_key', 'anthropic_api_key', 'resend_api_key', 'telegram_bot_token', 'telegram_webhook_secret'];
 $secretSentinel = '••••KEEP••••';
 
 function isSecretPlaceholder($value, $sentinel) {
@@ -31,12 +31,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         'email_from','email_from_name','email_reply_to','portal_url',
         'openai_model','openai_max_size_mb','openai_auto_approve_threshold',
         'openai_secondary_model',
+        'anthropic_model',
         'telegram_bot_username',
     ];
     $boolFields = [
         'email_enabled','notify_welcome','notify_invoice','notify_invoice_paid',
         'notify_request','notify_status','notify_comment','notify_invoice_approved',
         'openai_enabled','openai_auto_process','openai_consensus_enabled',
+        'anthropic_enabled',
         'telegram_enabled',
     ];
 
@@ -166,7 +168,9 @@ function secretIsSet($key) {
 
 // Status por seccion (para badges en las tabs)
 $emailReady = getSetting('email_enabled', '1') === '1' && secretIsSet('resend_api_key');
-$aiReady = getSetting('openai_enabled', '1') === '1' && secretIsSet('openai_api_key');
+$aiReady = getSetting('openai_enabled', '1') === '1'
+    && (secretIsSet('openai_api_key')
+        || (getSetting('anthropic_enabled', '1') === '1' && secretIsSet('anthropic_api_key')));
 $tgReady = getSetting('telegram_enabled', '0') === '1' && secretIsSet('telegram_bot_token');
 
 $page_title = 'Configuracion';
@@ -484,6 +488,31 @@ include 'components/layout_start.php';
                     <label class="field-label">Modelo secundario (validador)</label>
                     <input type="text" name="openai_secondary_model" value="<?= htmlspecialchars(getSetting('openai_secondary_model', 'gpt-4o-mini')) ?>" class="field text-sm" placeholder="gpt-4o-mini">
                     <p class="mt-1 text-[11px] text-slate-400">Sugerido: <code>gpt-4o-mini</code> (rapido, economico). Si quieres maxima precision usa otro modelo con vision.</p>
+                </div>
+            </div>
+
+            <div class="surface-card overflow-hidden mb-3">
+                <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900">Respaldo con Claude (Anthropic)</h3>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Si OpenAI falla (sin credito, key invalida, servicio caido) la factura se reintenta con Claude en vez de quedar en error.</p>
+                    </div>
+                    <label class="set-switch" title="Activar respaldo">
+                        <input type="checkbox" name="anthropic_enabled" value="1" <?= getSetting('anthropic_enabled', '1') === '1' ? 'checked' : '' ?>>
+                        <span class="set-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="p-5 space-y-4">
+                    <div>
+                        <label class="field-label">Anthropic API Key</label>
+                        <?php renderSecretInput('anthropic_api_key', 'Anthropic API Key', 'sk-ant-api03-...'); ?>
+                        <p class="mt-1 text-[11px] text-slate-400">Solo en el servidor. Genera la key en <a href="https://console.anthropic.com/settings/keys" target="_blank" class="text-blue-600 hover:underline">console.anthropic.com</a>.</p>
+                    </div>
+                    <div>
+                        <label class="field-label">Modelo de respaldo</label>
+                        <input type="text" name="anthropic_model" value="<?= htmlspecialchars(getSetting('anthropic_model', 'claude-opus-5')) ?>" class="field text-sm" placeholder="claude-opus-5">
+                        <p class="mt-1 text-[11px] text-slate-400">Default: <code>claude-opus-5</code>. El respaldo extrae con un solo modelo, sin validacion cruzada, y lo avisa en las advertencias de la factura.</p>
+                    </div>
                 </div>
             </div>
 
