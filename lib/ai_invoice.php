@@ -448,6 +448,66 @@ function aiAnthropicSupports($mime) {
 }
 
 /**
+ * Llamada bloqueante a la Messages API de Anthropic con retry.
+ * Se habla HTTP directo con curl (igual que aiCallOpenAI) en vez de usar el SDK
+ * oficial: el vendor/ no viaja en el deploy, y arrastrar el SDK + guzzle + psr +
+ * php-http al servidor rompia el autoload de Composer y tumbaba la subida con
+ * un 500. La API es JSON plano, no hace falta mas que esto.
+ */
+function aiCallAnthropic(array $payload, string $apiKey, int $maxAttempts = 2) {
+    $lastError = '';
+    // Reusar handle entre retries para evitar otro TLS handshake.
+    static $ch = null;
+    if ($ch === null) $ch = curl_init();
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => 'https://api.anthropic.com/v1/messages',
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => [
+                'x-api-key: ' . $apiKey,
+                'anthropic-version: 2023-06-01',
+                'Content-Type: application/json',
+                'Connection: keep-alive',
+            ],
+            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            // Mas holgado que OpenAI: el respaldo corre despues de que el
+            // intento principal ya gasto su tiempo, y con thinking adaptativo
+            // la respuesta puede tardar mas.
+            CURLOPT_TIMEOUT        => 60,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TCP_NODELAY    => true,
+        ]);
+        $resp = curl_exec($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        // NO cerrar $ch — se reutiliza para retries y futuras llamadas.
+
+        if ($resp === false) { $lastError = 'Red: ' . $err; continue; }
+        $json = json_decode($resp, true);
+        if (!is_array($json)) { $lastError = "HTTP {$http}: " . substr((string)$resp, 0, 200); continue; }
+        if ($http >= 500 || $http === 429) { $lastError = 'Anthropic HTTP ' . $http; continue; }
+        if ($http >= 400) {
+            return ['ok' => false, 'error' => 'Anthropic: ' . ($json['error']['message'] ?? 'HTTP ' . $http)];
+        }
+        if (($json['stop_reason'] ?? '') === 'refusal') {
+            return ['ok' => false, 'error' => 'documento rechazado (' . ($json['stop_details']['category'] ?? 'sin categoria') . ')'];
+        }
+        $content = '';
+        foreach (($json['content'] ?? []) as $block) {
+            // Con thinking adaptativo el primer bloque puede ser de razonamiento;
+            // el JSON de structured outputs viene en el primer bloque de texto.
+            if (($block['type'] ?? '') === 'text') { $content = (string)$block['text']; break; }
+        }
+        $data = json_decode($content, true);
+        if (!is_array($data)) { $lastError = 'JSON no parseable'; continue; }
+        $tokens = (int)($json['usage']['input_tokens'] ?? 0) + (int)($json['usage']['output_tokens'] ?? 0);
+        return ['ok' => true, 'data' => $data, 'tokens' => $tokens, 'raw' => $content];
+    }
+    return ['ok' => false, 'error' => $lastError ?: 'Error desconocido'];
+}
+
+/**
  * Extraccion de respaldo con Claude. Usa el mismo system prompt y el mismo JSON
  * schema que la ruta de OpenAI (structured outputs garantiza que el bloque de
  * texto sea JSON valido contra el schema), asi que devuelve exactamente la
@@ -466,74 +526,50 @@ function aiExtractWithClaude($absPath, $mime, $hintBlock = '') {
     $bytes = @file_get_contents($absPath);
     if ($bytes === false) return ['ok' => false, 'error' => 'no se pudo leer el archivo'];
 
-    $autoload = __DIR__ . '/../vendor/autoload.php';
-    if (!is_file($autoload)) return ['ok' => false, 'error' => 'SDK no instalado (corre composer install)'];
-    require_once $autoload;
-
     $b64 = base64_encode($bytes);
     if ($mime === 'application/pdf') {
-        $media = \Anthropic\Messages\DocumentBlockParam::with(
-            source: \Anthropic\Messages\Base64PDFSource::with(data: $b64),
-            title:  'factura.pdf',
-        );
+        $media = [
+            'type'   => 'document',
+            'title'  => 'factura.pdf',
+            'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => $b64],
+        ];
     } else {
         // 'image/jpg' no es un media type valido en la API; normalizar a jpeg.
         $mediaType = ($mime === 'image/jpg') ? 'image/jpeg' : $mime;
-        $media = \Anthropic\Messages\ImageBlockParam::with(
-            source: \Anthropic\Messages\Base64ImageSource::with(data: $b64, mediaType: $mediaType),
-        );
+        $media = [
+            'type'   => 'image',
+            'source' => ['type' => 'base64', 'media_type' => $mediaType, 'data' => $b64],
+        ];
     }
-
-    $prompt = \Anthropic\Messages\TextBlockParam::with(
-        text: "Extrae LITERALMENTE los datos de esta factura para los formularios 606, 607 e IT-1 de la DGII. Si un campo NO aparece claramente en el documento, dejalo vacio o 0. NO INVENTES valores. Si el documento tiene varias paginas, extrae la factura principal." . $hintBlock
-    );
 
     $outputConfig = ['format' => ['type' => 'json_schema', 'schema' => aiInvoiceJsonSchema()]];
     if (aiAnthropicSupportsEffort($cfg['model'])) $outputConfig['effort'] = 'medium';
 
-    try {
-        $client  = new \Anthropic\Client(apiKey: $cfg['api_key']);
-        $message = $client->messages->create(
-            model:     $cfg['model'],
-            // Con thinking adaptativo el presupuesto de salida incluye el
-            // razonamiento, por eso no se recorta a los ~900 tokens del JSON.
-            maxTokens: 8000,
-            // El system prompt (catalogos 606/607 completos) es ~6.7k tokens y
-            // es identico en cada factura: cachearlo baja el costo de entrada a
-            // 0.1x en las llamadas siguientes. Clave en el reproceso masivo,
-            // donde se encadenan muchas facturas seguidas.
-            system:    [
-                \Anthropic\Messages\TextBlockParam::with(
-                    text:         aiSystemPrompt(),
-                    cacheControl: ['type' => 'ephemeral'],
-                ),
+    $payload = [
+        'model' => $cfg['model'],
+        // Con thinking adaptativo el presupuesto de salida incluye el
+        // razonamiento, por eso no se recorta a los ~900 tokens del JSON.
+        'max_tokens' => 8000,
+        // El system prompt (catalogos 606/607 completos) es ~6.7k tokens y es
+        // identico en cada factura: cachearlo baja el costo de entrada a 0.1x en
+        // las llamadas siguientes. Clave en el reproceso masivo, donde se
+        // encadenan muchas facturas seguidas.
+        'system' => [[
+            'type'          => 'text',
+            'text'          => aiSystemPrompt(),
+            'cache_control' => ['type' => 'ephemeral'],
+        ]],
+        'messages' => [[
+            'role'    => 'user',
+            'content' => [
+                $media,
+                ['type' => 'text', 'text' => "Extrae LITERALMENTE los datos de esta factura para los formularios 606, 607 e IT-1 de la DGII. Si un campo NO aparece claramente en el documento, dejalo vacio o 0. NO INVENTES valores. Si el documento tiene varias paginas, extrae la factura principal." . $hintBlock],
             ],
-            messages:  [
-                \Anthropic\Messages\MessageParam::with(role: 'user', content: [$media, $prompt]),
-            ],
-            outputConfig: $outputConfig,
-            // El default del SDK son 10 min: demasiado para una subida web.
-            requestOptions: ['timeout' => 60.0, 'maxRetries' => 1],
-        );
-    } catch (\Anthropic\Core\Exceptions\APIStatusException $e) {
-        return ['ok' => false, 'error' => 'HTTP ' . ($e->status ?? '?') . ' ' . $e->getMessage()];
-    } catch (\Throwable $e) {
-        return ['ok' => false, 'error' => $e->getMessage()];
-    }
+        ]],
+        'output_config' => $outputConfig,
+    ];
 
-    if ($message->stopReason === 'refusal') {
-        return ['ok' => false, 'error' => 'documento rechazado (' . ($message->stopDetails?->category ?? 'sin categoria') . ')'];
-    }
-
-    $content = '';
-    foreach ($message->content as $block) {
-        if ($block->type === 'text') { $content = $block->text; break; }
-    }
-    $data = json_decode($content, true);
-    if (!is_array($data)) return ['ok' => false, 'error' => 'JSON no parseable'];
-
-    $tokens = (int)$message->usage->inputTokens + (int)$message->usage->outputTokens;
-    return ['ok' => true, 'data' => $data, 'tokens' => $tokens, 'raw' => $content];
+    return aiCallAnthropic($payload, $cfg['api_key'], 2);
 }
 
 function aiSystemPrompt() {
