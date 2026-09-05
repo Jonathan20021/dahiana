@@ -146,7 +146,7 @@ foreach ($clientList as $c) {
 
 $page_title = 'Control de Igualas';
 $page_subtitle = 'Vista mensual con generacion masiva y seguimiento de cobros.';
-$page_actions = '<form method="POST" class="inline" onsubmit="return confirm(\'Generar volantes para todos los clientes con iguala sin volante este mes?\')">
+$page_actions = '<form method="POST" class="inline" onsubmit="return confirm(\'Generar volantes para todos los clientes con iguala sin volante este mes?\')">' . csrfField() . '
     <input type="hidden" name="action" value="generate_all">
     <button type="submit" class="btn-dark">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
@@ -286,7 +286,7 @@ include 'components/layout_start.php';
                 <!-- Actions -->
                 <div class="flex items-center gap-1 shrink-0 lg:w-auto">
                     <?php if (!$c['invoice_id']): ?>
-                    <form method="POST" class="inline">
+                    <form method="POST" class="inline"><?= csrfField() ?>
                         <input type="hidden" name="action" value="generate_invoice">
                         <input type="hidden" name="client_id" value="<?= $c['id'] ?>">
                         <button type="submit" class="btn-dark !text-xs !py-1.5 !px-3">
@@ -296,7 +296,7 @@ include 'components/layout_start.php';
                     </form>
                     <?php else: ?>
                     <?php if ($c['invoice_status'] === 'pendiente'): ?>
-                    <form method="POST" class="inline">
+                    <form method="POST" class="inline"><?= csrfField() ?>
                         <input type="hidden" name="action" value="mark_paid">
                         <input type="hidden" name="invoice_id" value="<?= $c['invoice_id'] ?>">
                         <button type="submit" class="icon-btn hover:!bg-emerald-100 hover:!text-emerald-700" title="Marcar pagado">
@@ -307,7 +307,7 @@ include 'components/layout_start.php';
                     <a href="invoice_pdf.php?id=<?= $c['invoice_id'] ?>" target="_blank" class="icon-btn hover:!bg-blue-100 hover:!text-blue-700" title="Descargar PDF">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                     </a>
-                    <form method="POST" class="inline" onsubmit="return confirm('Eliminar este volante?')">
+                    <form method="POST" class="inline" onsubmit="return confirm('Eliminar este volante?')"><?= csrfField() ?>
                         <input type="hidden" name="action" value="delete_invoice">
                         <input type="hidden" name="invoice_id" value="<?= $c['invoice_id'] ?>">
                         <button type="submit" class="icon-btn hover:!bg-red-100 hover:!text-red-700" title="Eliminar volante">

@@ -223,7 +223,7 @@ include 'components/layout_start.php';
             <div class="flex items-center gap-2 shrink-0">
                 <button type="button" onclick="openModal('editUserModal<?= $uid ?>')" class="btn-soft text-xs">Editar</button>
                 <?php if (!$isMe): ?>
-                <form action="admin_users.php" method="POST" onsubmit="return confirm('Eliminar este usuario?')">
+                <form action="admin_users.php" method="POST" onsubmit="return confirm('Eliminar este usuario?')"><?= csrfField() ?>
                     <input type="hidden" name="action" value="delete_user">
                     <input type="hidden" name="user_id" value="<?= $uid ?>">
                     <button type="submit" class="bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold rounded-2xl px-3 py-2">Eliminar</button>
@@ -244,7 +244,7 @@ include 'components/layout_start.php';
                 <h3 class="text-base font-bold text-slate-900">Nuevo usuario</h3>
                 <button type="button" onclick="closeModal('createUserModal')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_users.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <form action="admin_users.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" value="add_user">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -322,7 +322,7 @@ include 'components/layout_start.php';
                 <h3 class="text-base font-bold text-slate-900">Editar usuario</h3>
                 <button type="button" onclick="closeModal('editUserModal<?= $uid ?>')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_users.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <form action="admin_users.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" value="edit_user">
                 <input type="hidden" name="user_id" value="<?= $uid ?>">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

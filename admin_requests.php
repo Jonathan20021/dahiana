@@ -142,7 +142,7 @@ include 'components/layout_start.php';
 
                 <!-- Actions -->
                 <div class="flex items-center gap-2 lg:w-auto shrink-0">
-                    <form action="admin_requests.php<?= $filter !== 'all' ? '?status=' . urlencode($filter) : '' ?>" method="POST" class="inline-flex">
+                    <form action="admin_requests.php<?= $filter !== 'all' ? '?status=' . urlencode($filter) : '' ?>" method="POST" class="inline-flex"><?= csrfField() ?>
                         <input type="hidden" name="action" value="update_status">
                         <input type="hidden" name="request_id" value="<?= $req['id'] ?>">
                         <select name="status" onchange="this.form.submit()" class="text-xs font-medium rounded-xl border border-stone-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-200">

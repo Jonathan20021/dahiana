@@ -29,6 +29,9 @@ $availableServices = $showServices ? signupVisibleServices() : [];
 $error = null;
 $success = null;
 
+// Pagina publica: tampoco pasa por requireAuth(), se valida aqui.
+requireCsrf();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $services = $_POST['services'] ?? [];
     if (!is_array($services)) $services = [];
@@ -306,7 +309,7 @@ function renderField($field, $catalog, $isReq, $taxRegimes, $operationTypes) {
             <?php endif; ?>
 
             <!-- Multi-step form -->
-            <form method="POST" id="signupForm" class="flex-1 flex flex-col" autocomplete="off" novalidate>
+            <form method="POST" id="signupForm" class="flex-1 flex flex-col" autocomplete="off" novalidate><?= csrfField() ?>
                 <div class="flex-1">
                     <!-- Step 1: Identity -->
                     <div class="step-pane is-active" data-pane="0">

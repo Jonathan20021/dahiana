@@ -87,7 +87,7 @@ include 'components/layout_start.php';
         <p class="text-2xl font-extrabold text-slate-900"><?= round(strlen($log)/1024, 1) ?> KB</p>
     </div>
     <div class="stat-card p-4 flex items-center justify-center">
-        <form method="POST">
+        <form method="POST"><?= csrfField() ?>
             <input type="hidden" name="action" value="clear_log">
             <button type="submit" class="btn-soft text-xs">Limpiar log</button>
         </form>

@@ -132,7 +132,7 @@ include 'components/layout_start.php';
                         class="sv-icon-btn" title="Editar">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                     </button>
-                    <form action="admin_services.php" method="POST" class="inline">
+                    <form action="admin_services.php" method="POST" class="inline"><?= csrfField() ?>
                         <input type="hidden" name="action" value="toggle_active">
                         <input type="hidden" name="service_id" value="<?= (int)$s['id'] ?>">
                         <button type="submit" class="sv-icon-btn" title="<?= $isActive ? 'Pausar' : 'Activar' ?>">
@@ -143,7 +143,7 @@ include 'components/layout_start.php';
                             <?php endif; ?>
                         </button>
                     </form>
-                    <form action="admin_services.php" method="POST" onsubmit="return confirm('Eliminar este servicio? No afecta a clientes que ya lo tienen asignado.')" class="inline">
+                    <form action="admin_services.php" method="POST" onsubmit="return confirm('Eliminar este servicio? No afecta a clientes que ya lo tienen asignado.')" class="inline"><?= csrfField() ?>
                         <input type="hidden" name="action" value="delete_service">
                         <input type="hidden" name="service_id" value="<?= (int)$s['id'] ?>">
                         <button type="submit" class="sv-icon-btn sv-icon-danger" title="Eliminar">
@@ -171,7 +171,7 @@ include 'components/layout_start.php';
                 </div>
                 <button type="button" onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_services.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <form action="admin_services.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" id="modalAction" value="add_service">
                 <input type="hidden" name="service_id" id="modalServiceId" value="">
 

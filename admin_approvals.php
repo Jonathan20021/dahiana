@@ -156,7 +156,7 @@ include 'components/layout_start.php';
                 <button type="button" onclick="openReject(<?= $u['id'] ?>)" class="ap-btn ap-btn-danger">
                     Rechazar
                 </button>
-                <form method="POST" class="inline-flex" onsubmit="return confirm('Aprobar este cliente? Se crearan sus solicitudes de servicios automaticamente.')">
+                <form method="POST" class="inline-flex" onsubmit="return confirm('Aprobar este cliente? Se crearan sus solicitudes de servicios automaticamente.')"><?= csrfField() ?>
                     <input type="hidden" name="action" value="approve">
                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                     <button type="submit" class="ap-btn ap-btn-success">
@@ -232,7 +232,7 @@ include 'components/layout_start.php';
         <!-- Inline edit form (collapsible) -->
         <div id="edit-<?= $u['id'] ?>" class="ap-edit hidden">
             <p class="ap-section-title mb-3">Corregir antes de aprobar</p>
-            <form method="POST" class="ap-edit-grid">
+            <form method="POST" class="ap-edit-grid"><?= csrfField() ?>
                 <input type="hidden" name="action" value="edit">
                 <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                 <div class="ap-edit-f">
@@ -392,7 +392,7 @@ include 'components/layout_start.php';
                 <h3 class="text-base font-bold text-slate-900">Rechazar solicitud</h3>
                 <p class="text-xs text-slate-500 mt-0.5">El cliente recibira una notificacion con el motivo.</p>
             </div>
-            <form method="POST" class="p-6 space-y-4">
+            <form method="POST" class="p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" value="reject">
                 <input type="hidden" name="user_id" id="rejectUserId">
                 <div>

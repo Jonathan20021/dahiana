@@ -1,4 +1,9 @@
 <?php
+// El Share Target de la PWA lo dispara el sistema operativo y no puede llevar
+// el token CSRF, asi que esta pagina se sale del control automatico que hace
+// requireAuth() y lo valida ella misma mas abajo: token para el formulario
+// normal, Sec-Fetch-Site para lo que llega compartido.
+define('CSRF_MANUAL', true);
 require_once 'config.php';
 requireAuth('client');
 
@@ -32,11 +37,7 @@ function cuRedirect($success = null, $error = null) {
 // Si el navegador manda mas bytes de los que permite post_max_size, PHP vacia
 // $_POST y $_FILES: el handler no entraba y la pagina recargaba en blanco, sin
 // decir nada. Cuatro fotos de 12 MB bastaban para provocarlo.
-$postTooLarge = $_SERVER['REQUEST_METHOD'] === 'POST'
-    && empty($_POST)
-    && empty($_FILES)
-    && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0;
-if ($postTooLarge) {
+if (postWasDiscarded()) {
     $limit = ini_get('post_max_size');
     cuRedirect(null, "Los archivos superan el limite del servidor ({$limit} en total). Subelas en tandas mas pequenas.");
 }
@@ -171,7 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
         if ($res['ok']) {
             cuRedirect('Factura reprocesada.');
         }
-        cuRedirect(null, 'Error al reprocesar: ' . ($res['error'] ?? ''));
+        cuRedirect(null, 'Error al reprocesar: ' . ($res['error'] ?? '')
+            . (!empty($res['kept_previous']) ? '. Se conservaron los datos anteriores.' : ''));
     }
     cuRedirect();
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_upload') {

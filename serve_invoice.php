@@ -47,7 +47,7 @@ if (!is_file($path)) {
 
 // Nunca confiamos en el mime guardado para decidir como responde el navegador:
 // se sirve solo desde la lista blanca y, si no cuadra, como descarga opaca.
-$mime = aiExtensionForMime($upload['mime_type']) ? $upload['mime_type'] : 'application/octet-stream';
+$mime = aiServableMime($upload['mime_type']);
 $inline = $mime !== 'application/octet-stream' && empty($_GET['download']);
 
 $safeName = preg_replace('/[^\w.\- ]+/u', '_', (string)($upload['original_name'] ?: $upload['filename']));
@@ -67,6 +67,14 @@ if ($mime !== 'application/pdf') {
 // Privado: es documentacion fiscal de un cliente, no debe quedar en caches
 // compartidos, pero si en la del navegador para no reenviar la imagen en cada
 // scroll del listado.
+//
+// PHP planta su propio 'Cache-Control: no-store, no-cache, must-revalidate'
+// mas Pragma y Expires al abrir la sesion (session.cache_limiter). El header()
+// de abajo pisa el Cache-Control, pero Pragma y Expires sobreviven y bastan
+// para que el navegador vuelva a bajar cada miniatura en cada recarga del
+// listado: en movil son varios MB por vista.
+header_remove('Pragma');
+header_remove('Expires');
 header('Cache-Control: private, max-age=600, no-transform');
 header('X-Frame-Options: SAMEORIGIN');
 

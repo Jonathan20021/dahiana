@@ -337,7 +337,7 @@ include 'components/layout_start.php';
                 </div>
                 <button type="button" onclick="document.getElementById('addClientModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_clients.php" method="POST" class="flex-1 overflow-y-auto scroll-area">
+            <form action="admin_clients.php" method="POST" class="flex-1 overflow-y-auto scroll-area"><?= csrfField() ?>
                 <input type="hidden" name="action" value="add_client">
 
                 <div class="p-6 space-y-5">

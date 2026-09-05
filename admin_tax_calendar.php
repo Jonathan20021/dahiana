@@ -161,7 +161,7 @@ $clientList = $clientsStmt->fetchAll();
 
 $page_title = 'Calendario Fiscal DGII';
 $page_subtitle = 'Obligaciones tributarias por cliente con vencimientos automaticos.';
-$page_actions = '<form method="POST" class="inline" onsubmit="return confirm(\'Regenerar obligaciones para todos los clientes activos para los proximos 6 meses?\')">
+$page_actions = '<form method="POST" class="inline" onsubmit="return confirm(\'Regenerar obligaciones para todos los clientes activos para los proximos 6 meses?\')">' . csrfField() . '
     <input type="hidden" name="action" value="regenerate_all">
     <button type="submit" class="btn-soft text-sm">Sincronizar todos</button>
 </form>';
@@ -250,7 +250,7 @@ include 'components/layout_start.php';
 </form>
 
 <!-- Obligations list -->
-<form method="POST" id="bulkObForm" onsubmit="return confirm('Eliminar las obligaciones seleccionadas?')">
+<form method="POST" id="bulkObForm" onsubmit="return confirm('Eliminar las obligaciones seleccionadas?')"><?= csrfField() ?>
     <input type="hidden" name="action" value="bulk_delete">
     <div class="tc-card">
         <div class="tc-head">
@@ -374,7 +374,7 @@ include 'components/layout_start.php';
                                 Abrir cliente
                             </a>
                             <?php if (!empty($ob['dismissed_at'])): ?>
-                            <form method="POST" class="contents">
+                            <form method="POST" class="contents"><?= csrfField() ?>
                                 <input type="hidden" name="action" value="restore">
                                 <input type="hidden" name="obligation_id" value="<?= (int)$ob['id'] ?>">
                                 <button type="submit" class="tc-menu-item">
@@ -401,23 +401,23 @@ include 'components/layout_start.php';
 <!-- Hidden forms for each row's actions (outside bulkObForm to avoid nested forms) -->
 <?php foreach ($obligations as $ob): ?>
     <?php if ($ob['status'] !== 'completado'): ?>
-    <form method="POST" id="completeForm-<?= $ob['id'] ?>" style="display:none">
+    <form method="POST" id="completeForm-<?= $ob['id'] ?>" style="display:none"><?= csrfField() ?>
         <input type="hidden" name="action" value="mark_completed">
         <input type="hidden" name="obligation_id" value="<?= $ob['id'] ?>">
     </form>
     <?php else: ?>
-    <form method="POST" id="reopenForm-<?= $ob['id'] ?>" style="display:none">
+    <form method="POST" id="reopenForm-<?= $ob['id'] ?>" style="display:none"><?= csrfField() ?>
         <input type="hidden" name="action" value="mark_pending">
         <input type="hidden" name="obligation_id" value="<?= $ob['id'] ?>">
     </form>
     <?php endif; ?>
     <?php if (in_array($ob['status'], ['pendiente','vencido'], true)): ?>
-    <form method="POST" id="emailForm-<?= $ob['id'] ?>" style="display:none">
+    <form method="POST" id="emailForm-<?= $ob['id'] ?>" style="display:none"><?= csrfField() ?>
         <input type="hidden" name="action" value="send_email_reminder">
         <input type="hidden" name="obligation_id" value="<?= $ob['id'] ?>">
     </form>
     <?php endif; ?>
-    <form method="POST" id="deleteForm-<?= $ob['id'] ?>" style="display:none">
+    <form method="POST" id="deleteForm-<?= $ob['id'] ?>" style="display:none"><?= csrfField() ?>
         <input type="hidden" name="action" value="delete">
         <input type="hidden" name="obligation_id" value="<?= $ob['id'] ?>">
     </form>
@@ -432,7 +432,7 @@ include 'components/layout_start.php';
                 <h3 class="text-base font-bold text-slate-900">Limpiar completadas</h3>
                 <p class="text-xs text-slate-500 mt-1">Elimina obligaciones ya completadas para mantener el calendario limpio.</p>
             </div>
-            <form method="POST" class="p-6 space-y-4" onsubmit="return confirm('Eliminar las obligaciones completadas? Esto no se puede deshacer.')">
+            <form method="POST" class="p-6 space-y-4" onsubmit="return confirm('Eliminar las obligaciones completadas? Esto no se puede deshacer.')"><?= csrfField() ?>
                 <input type="hidden" name="action" value="bulk_delete_completed">
                 <div>
                     <label class="field-label">Eliminar las completadas hasta el periodo</label>

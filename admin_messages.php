@@ -208,7 +208,7 @@ include 'components/layout_start.php';
         </div>
 
         <footer class="chat-input">
-            <form method="POST" class="flex items-end gap-2">
+            <form method="POST" class="flex items-end gap-2"><?= csrfField() ?>
                 <input type="hidden" name="action" value="send_general">
                 <input type="hidden" name="client_id" value="<?= (int)$selectedClient ?>">
                 <textarea name="message" rows="1" required placeholder="Escribe un mensaje a <?= htmlspecialchars(explode(' ', $selectedClientData['name'])[0]) ?>..."

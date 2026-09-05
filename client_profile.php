@@ -96,7 +96,7 @@ include 'components/layout_start.php';
         <h3 class="text-base font-bold text-slate-900">Mis datos</h3>
         <p class="text-xs text-slate-500 mt-0.5">Esta es la informacion que tu asesor ve. Algunos campos fiscales (RNC, regimen) solo los puede cambiar el equipo.</p>
     </div>
-    <form method="POST" class="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <form method="POST" class="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4"><?= csrfField() ?>
         <input type="hidden" name="action" value="update_profile">
         <div>
             <label class="field-label">Nombre completo *</label>
@@ -154,7 +154,7 @@ include 'components/layout_start.php';
         <h3 class="text-base font-bold text-slate-900">Cambiar contrasena</h3>
         <p class="text-xs text-slate-500 mt-0.5">Usa una contrasena fuerte de al menos 8 caracteres.</p>
     </div>
-    <form method="POST" class="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <form method="POST" class="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4"><?= csrfField() ?>
         <input type="hidden" name="action" value="change_password">
         <div>
             <label class="field-label">Contrasena actual</label>
@@ -208,7 +208,7 @@ include 'components/layout_start.php';
                 <p class="text-xs text-slate-600 mt-2">Envia fotos al chat con <code class="font-mono">@<?= htmlspecialchars($botUsername) ?></code> y las procesamos automaticamente.</p>
             </div>
         </div>
-        <form method="POST" class="mt-4 flex justify-end" onsubmit="return confirm('Desvincular tu Telegram? Tendras que reconectar para enviar facturas.')">
+        <form method="POST" class="mt-4 flex justify-end" onsubmit="return confirm('Desvincular tu Telegram? Tendras que reconectar para enviar facturas.')"><?= csrfField() ?>
             <input type="hidden" name="action" value="unlink_telegram">
             <button type="submit" class="text-xs text-red-600 hover:text-red-800 font-semibold">Desvincular este Telegram</button>
         </form>

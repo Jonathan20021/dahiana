@@ -26,8 +26,8 @@ if (session_status() === PHP_SESSION_NONE) {
         // correo. Lax ya bloquea el POST cross-site, que es el vector de CSRF.
         'samesite' => 'Lax',
     ]);
+    session_start();
 }
-session_start();
 
 // Database configuration
 define('DB_HOST', '129.121.81.172');
@@ -503,10 +503,30 @@ function csrfValid() {
  * como guarda en un if sin duplicar la comprobacion.
  */
 function requireCsrf() {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') return true;
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') return true;
+    // Si PHP tiro el cuerpo por pasarse de post_max_size no hay token, pero
+    // tampoco hay accion que ejecutar: se deja pasar para que la pagina pueda
+    // dar el mensaje util en vez de un 419 que no explica nada.
+    if (postWasDiscarded()) return true;
     if (csrfValid()) return true;
-    http_response_code(419);
-    die('Sesion expirada o solicitud no valida. Vuelve atras, recarga la pagina e intentalo de nuevo.');
+    // 403 y no 419: 419 es una convencion de Laravel, no un codigo HTTP real, y
+    // Apache lo traduce a 500. El usuario veia "Internal Server Error" y en un
+    // host con su propio ErrorDocument 500 ni siquiera llegaba este mensaje.
+    http_response_code(403);
+    die('<div style="font-family:system-ui;padding:40px;text-align:center"><h1>Solicitud no valida</h1><p>Tu sesion expiro o el formulario venia de otro sitio.</p><p><a href="javascript:history.back()">Volver</a>, recargar la pagina y reintentar.</p></div>');
+}
+
+/**
+ * True cuando el navegador mando un cuerpo POST y PHP lo descarto entero por
+ * exceder post_max_size: $_POST y $_FILES llegan vacios aunque el request
+ * traiga megas encima. Sin detectarlo la pagina recarga sin decir nada.
+ */
+function postWasDiscarded() {
+    // ?? '' porque estos helpers tambien se cargan desde CLI (cron_daily.php,
+    // el worker de Telegram), donde $_SERVER no trae REQUEST_METHOD.
+    return ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+        && empty($_POST) && empty($_FILES)
+        && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0;
 }
 
 // ==========================================================================
@@ -1198,6 +1218,16 @@ function requireAuth($role = null) {
     if ($role && !canAccessArea($_SESSION['role'], $role)) {
         die('No tienes permisos para acceder a esta pagina.');
     }
+
+    // CSRF centralizado. Ponerlo aqui y no pagina por pagina es deliberado:
+    // toda pagina autenticada llama a requireAuth() en su primera linea, asi
+    // que ningun POST puede quedarse sin validar por olvido al crear una
+    // pantalla nueva. Va despues del control de sesion para que la sesion
+    // caducada mande al login en vez de soltar un 419.
+    // Excepcion: las paginas que reciben un POST que no puede llevar el token
+    // (el Share Target de la PWA, que dispara el sistema operativo) definen
+    // CSRF_MANUAL antes de cargar config.php y validan por su cuenta.
+    if (!defined('CSRF_MANUAL')) requireCsrf();
 }
 
 // =========================================================================

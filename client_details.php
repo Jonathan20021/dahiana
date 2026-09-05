@@ -295,7 +295,7 @@ include 'components/layout_start.php';
         <!-- Assign service -->
         <div class="surface-card p-5">
             <h3 class="text-sm font-bold text-slate-900 mb-3">Asignar nuevo servicio</h3>
-            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="flex flex-col md:flex-row md:items-end gap-2">
+            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="flex flex-col md:flex-row md:items-end gap-2"><?= csrfField() ?>
                 <input type="hidden" name="action" value="add_request">
                 <div class="flex-1">
                     <label class="field-label">Servicio</label>
@@ -353,7 +353,7 @@ include 'components/layout_start.php';
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                             <?= getStatusBadge($req['status']) ?>
-                            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="inline">
+                            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="inline"><?= csrfField() ?>
                                 <input type="hidden" name="action" value="update_status">
                                 <input type="hidden" name="request_id" value="<?= $req['id'] ?>">
                                 <select name="status" onchange="this.form.submit()" class="field !py-1 !px-2 text-xs">
@@ -375,7 +375,7 @@ include 'components/layout_start.php';
                                 <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51"/></svg>
                             </a>
                             <?php endif; ?>
-                            <form action="client_details.php?id=<?= $client_id ?>" method="POST" onsubmit="return confirm('Eliminar?')" class="inline">
+                            <form action="client_details.php?id=<?= $client_id ?>" method="POST" onsubmit="return confirm('Eliminar?')" class="inline"><?= csrfField() ?>
                                 <input type="hidden" name="action" value="delete_request">
                                 <input type="hidden" name="request_id" value="<?= $req['id'] ?>">
                                 <button class="icon-btn !w-8 !h-8 hover:!bg-red-100 hover:!text-red-700" title="Eliminar">
@@ -432,7 +432,7 @@ include 'components/layout_start.php';
                 </div>
 
                 <!-- Panel de edicion oculto -->
-                <form id="subsPanel" action="client_details.php?id=<?= $client_id ?>" method="POST" class="hidden mt-4 pt-4 border-t border-slate-100">
+                <form id="subsPanel" action="client_details.php?id=<?= $client_id ?>" method="POST" class="hidden mt-4 pt-4 border-t border-slate-100"><?= csrfField() ?>
                     <input type="hidden" name="action" value="save_subscriptions">
                     <div class="mb-3 p-3 rounded-xl bg-blue-50/40 border border-blue-100 text-[11.5px] text-slate-700">
                         Si quitas una obligacion ya generada, todas las futuras pendientes de ese tipo seran archivadas y NO volveran a generarse hasta que la actives de nuevo.
@@ -490,7 +490,7 @@ include 'components/layout_start.php';
                 </div>
                 <div class="flex items-center gap-2">
                     <a href="admin_tax_calendar.php?client_id=<?= $client_id ?>" class="text-xs font-semibold text-blue-600">Ver todo</a>
-                    <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="inline">
+                    <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="inline"><?= csrfField() ?>
                         <input type="hidden" name="action" value="regenerate_obligations">
                         <button type="submit" class="text-xs font-semibold text-slate-500 hover:text-slate-900" title="Regenerar plantilla DGII">Sync</button>
                     </form>
@@ -499,7 +499,7 @@ include 'components/layout_start.php';
             <?php if (empty($obligations)): ?>
             <div class="py-6 text-center text-xs text-slate-400">
                 Sin obligaciones generadas. <br>
-                <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="inline-block mt-2">
+                <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="inline-block mt-2"><?= csrfField() ?>
                     <input type="hidden" name="action" value="regenerate_obligations">
                     <button type="submit" class="btn-soft !text-xs">Generar plantilla DGII</button>
                 </form>
@@ -516,7 +516,7 @@ include 'components/layout_start.php';
                         <p class="text-[11px] text-slate-500">Vence <?= date('d/m/Y', strtotime($ob['due_date'])) ?></p>
                     </div>
                     <?= getObligationStatusBadge($ob['status'], $ob['due_date']) ?>
-                    <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="opacity-0 group-hover:opacity-100 transition-opacity"><?= csrfField() ?>
                         <input type="hidden" name="action" value="toggle_obligation">
                         <input type="hidden" name="obligation_id" value="<?= $ob['id'] ?>">
                         <input type="hidden" name="new_status" value="<?= $ob['status'] === 'completado' ? 'pendiente' : 'completado' ?>">
@@ -565,7 +565,7 @@ include 'components/layout_start.php';
             <?php if ($client['notes']): ?>
             <div class="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-900 mb-3 whitespace-pre-line"><?= htmlspecialchars($client['notes']) ?></div>
             <?php endif; ?>
-            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="space-y-2">
+            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="space-y-2"><?= csrfField() ?>
                 <input type="hidden" name="action" value="add_note">
                 <textarea name="note" rows="3" required class="field text-sm" placeholder="Agregar una nota al historial..."></textarea>
                 <button type="submit" class="btn-dark text-xs w-full">Guardar nota</button>
@@ -612,7 +612,7 @@ include 'components/layout_start.php';
             <h4 class="text-sm font-bold text-red-700">Eliminar cliente</h4>
             <p class="text-xs text-slate-500 mt-0.5">Elimina al cliente y todos sus tramites permanentemente. No se puede deshacer.</p>
         </div>
-        <form action="client_details.php?id=<?= $client_id ?>" method="POST" onsubmit="return confirm('Estas seguro? Se eliminaran todos los tramites.')">
+        <form action="client_details.php?id=<?= $client_id ?>" method="POST" onsubmit="return confirm('Estas seguro? Se eliminaran todos los tramites.')"><?= csrfField() ?>
             <input type="hidden" name="action" value="delete_client">
             <button type="submit" class="rounded-2xl bg-red-50 text-red-700 hover:bg-red-100 transition-colors px-4 py-2 text-xs font-semibold">Eliminar permanentemente</button>
         </form>
@@ -628,7 +628,7 @@ include 'components/layout_start.php';
                 <h3 class="text-base font-bold text-slate-900">Editar cliente</h3>
                 <button type="button" onclick="document.getElementById('editClientModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="flex-1 overflow-y-auto scroll-area">
+            <form action="client_details.php?id=<?= $client_id ?>" method="POST" class="flex-1 overflow-y-auto scroll-area"><?= csrfField() ?>
                 <input type="hidden" name="action" value="edit_client">
                 <div class="p-6 space-y-5">
                     <div>

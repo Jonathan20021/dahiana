@@ -221,7 +221,7 @@ include 'components/layout_start.php';
                 <a href="uploads/<?= htmlspecialchars($d['filename']) ?>" target="_blank" class="ad-icon-btn" title="Descargar">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                 </a>
-                <form method="POST" onsubmit="return confirm('Eliminar este documento?')">
+                <form method="POST" onsubmit="return confirm('Eliminar este documento?')"><?= csrfField() ?>
                     <input type="hidden" name="action" value="delete_doc">
                     <input type="hidden" name="doc_id" value="<?= (int)$d['id'] ?>">
                     <button type="submit" class="ad-icon-btn ad-icon-danger" title="Eliminar">
@@ -247,7 +247,7 @@ include 'components/layout_start.php';
                 </div>
                 <button type="button" onclick="document.getElementById('uploadDocModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_documents.php" method="POST" enctype="multipart/form-data" class="p-6 space-y-3">
+            <form action="admin_documents.php" method="POST" enctype="multipart/form-data" class="p-6 space-y-3"><?= csrfField() ?>
                 <input type="hidden" name="action" value="upload_doc">
                 <div>
                     <label class="field-label">Cliente</label>

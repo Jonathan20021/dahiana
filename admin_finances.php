@@ -239,7 +239,7 @@ include 'components/layout_start.php';
 </div>
 
 <!-- Lista -->
-<form method="POST" id="bulkForm">
+<form method="POST" id="bulkForm"><?= csrfField() ?>
     <input type="hidden" name="action" value="bulk_paid">
     <div class="surface-card overflow-hidden">
         <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
@@ -350,15 +350,15 @@ include 'components/layout_start.php';
 
 <!-- Forms ocultos (uno por volante) -->
 <?php foreach ($invoices as $inv): ?>
-<form method="POST" id="markPaid-<?= (int)$inv['id'] ?>" class="hidden">
+<form method="POST" id="markPaid-<?= (int)$inv['id'] ?>" class="hidden"><?= csrfField() ?>
     <input type="hidden" name="action" value="mark_paid">
     <input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>">
 </form>
-<form method="POST" id="markPending-<?= (int)$inv['id'] ?>" class="hidden">
+<form method="POST" id="markPending-<?= (int)$inv['id'] ?>" class="hidden"><?= csrfField() ?>
     <input type="hidden" name="action" value="mark_pending">
     <input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>">
 </form>
-<form method="POST" id="deleteInv-<?= (int)$inv['id'] ?>" class="hidden">
+<form method="POST" id="deleteInv-<?= (int)$inv['id'] ?>" class="hidden"><?= csrfField() ?>
     <input type="hidden" name="action" value="delete_invoice">
     <input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>">
 </form>
@@ -376,7 +376,7 @@ include 'components/layout_start.php';
                 </div>
                 <button type="button" onclick="document.getElementById('createInvoiceModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_finances.php" method="POST" class="p-6 space-y-4">
+            <form action="admin_finances.php" method="POST" class="p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" value="create_invoice">
                 <div>
                     <label class="field-label">Cliente</label>

@@ -62,14 +62,13 @@ function irExtractionInScope($extractionId) {
 
 // Igual que en el portal del cliente: si el POST pasa post_max_size, PHP
 // descarta $_POST y $_FILES y la pagina recargaba sin ningun mensaje.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && empty($_FILES)
-    && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+if (postWasDiscarded()) {
     irRedirect(null, 'Los archivos superan el limite del servidor (' . ini_get('post_max_size') . ' por envio). Subelas en tandas mas pequenas.');
 }
 
 // Actions
+// El token ya lo valido requireAuth() al entrar a la pagina.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    requireCsrf();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_extraction') {
@@ -173,7 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($res['ok']) {
                 irRedirect('Reprocesada con IA.' . ($wasApproved ? ' Estaba aprobada: se removio del formulario y queda pendiente de aprobar otra vez.' : ''));
             }
-            irRedirect(null, $res['error'] ?? 'Error.');
+            irRedirect(null, ($res['error'] ?? 'Error.')
+                . (!empty($res['kept_previous']) ? ' Se conservaron los datos de la extraccion anterior; la factura no cambio.' : ''));
         }
         irRedirect();
     } elseif ($action === 'bulk_approve') {

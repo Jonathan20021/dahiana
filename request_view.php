@@ -213,7 +213,7 @@ include 'components/layout_start.php';
         </div>
 
         <?php if ($isAdmin): ?>
-        <form action="request_view.php?id=<?= $request_id ?>" method="POST">
+        <form action="request_view.php?id=<?= $request_id ?>" method="POST"><?= csrfField() ?>
             <input type="hidden" name="action" value="update_status">
             <label class="field-label">Cambiar estado</label>
             <select name="status" onchange="this.form.submit()" class="field py-2.5 text-sm">
@@ -263,7 +263,7 @@ include 'components/layout_start.php';
                     <div class="flex items-center gap-2">
                         <span class="text-[11px] text-slate-400"><?= date('d/m/Y H:i', strtotime($comment['created_at'])) ?></span>
                         <?php if ($isAdmin): ?>
-                        <form action="request_view.php?id=<?= $request_id ?>" method="POST" class="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <form action="request_view.php?id=<?= $request_id ?>" method="POST" class="opacity-0 group-hover:opacity-100 transition-opacity"><?= csrfField() ?>
                             <input type="hidden" name="action" value="delete_comment">
                             <input type="hidden" name="comment_id" value="<?= $comment['id'] ?>">
                             <button type="submit" class="text-[11px] text-red-400 hover:text-red-600 font-semibold" onclick="return confirm('Eliminar este mensaje?')">Eliminar</button>
@@ -276,7 +276,7 @@ include 'components/layout_start.php';
         </div>
 
         <div class="px-6 py-4 border-t border-stone-100">
-            <form action="request_view.php?id=<?= $request_id ?>" method="POST" class="flex gap-3 items-end">
+            <form action="request_view.php?id=<?= $request_id ?>" method="POST" class="flex gap-3 items-end"><?= csrfField() ?>
                 <input type="hidden" name="action" value="add_comment">
                 <textarea name="message" rows="2" required placeholder="Escribe un mensaje..."
                           class="field text-sm" style="resize: vertical;"></textarea>
@@ -297,7 +297,7 @@ include 'components/layout_start.php';
                 <span class="text-xs text-slate-400"><?= count($attachments) ?></span>
             </div>
             <div class="p-5">
-                <form action="request_view.php?id=<?= $request_id ?>" method="POST" enctype="multipart/form-data" id="upload-form">
+                <form action="request_view.php?id=<?= $request_id ?>" method="POST" enctype="multipart/form-data" id="upload-form"><?= csrfField() ?>
                     <input type="hidden" name="action" value="upload_file">
                     <div id="drop-zone" class="border-2 border-dashed border-stone-200 rounded-2xl p-5 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition-colors" onclick="document.getElementById('fileInput').click()">
                         <div class="w-10 h-10 mx-auto rounded-2xl bg-stone-100 flex items-center justify-center mb-2">
@@ -327,7 +327,7 @@ include 'components/layout_start.php';
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                             </a>
                             <?php if ($isAdmin): ?>
-                            <form action="request_view.php?id=<?= $request_id ?>" method="POST">
+                            <form action="request_view.php?id=<?= $request_id ?>" method="POST"><?= csrfField() ?>
                                 <input type="hidden" name="action" value="delete_attachment">
                                 <input type="hidden" name="attachment_id" value="<?= $att['id'] ?>">
                                 <button type="submit" onclick="return confirm('Eliminar archivo?')" class="p-1.5 text-slate-300 hover:text-red-500 rounded-lg hover:bg-white" title="Eliminar">

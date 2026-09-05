@@ -229,6 +229,21 @@ function bootstrapAiInvoiceSchema() {
             )
         ");
 
+        // Marca de cuando arranco el procesado de una factura. Sin ella, la que
+        // se quedaba en 'processing' porque el request murio a mitad (timeout
+        // del servidor, 500, worker que no volvio) no se podia recuperar nunca:
+        // aiProcessUpload() la rechazaba con "ya esta siendo procesada" y no
+        // habia ninguna via para destrabarla.
+        $iuCols = $pdo->query("
+            SELECT COLUMN_NAME FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'invoice_uploads'
+        ")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('processing_started_at', array_map('strtolower', $iuCols), true)) {
+            try {
+                $pdo->exec("ALTER TABLE invoice_uploads ADD COLUMN processing_started_at TIMESTAMP NULL DEFAULT NULL");
+            } catch (PDOException $e) {}
+        }
+
         // Ensure 'IT-1' is allowed in tax_filings (uses VARCHAR(10), already fits).
         // Ensure 608 filing rows can carry the optional fields we already use.
     } catch (PDOException $e) {
@@ -548,6 +563,22 @@ function aiExtensionForMime($mime) {
         'application/pdf' => 'pdf',
     ];
     return $map[strtolower(trim((string)$mime))] ?? null;
+}
+
+/**
+ * Content-Type con el que se puede devolver un archivo YA guardado.
+ *
+ * No es la misma lista que aiAcceptedMimes(): HEIC/HEIF dejaron de aceptarse al
+ * subir, pero quedan facturas viejas guardadas asi y devolverlas como
+ * application/octet-stream las convertia en una descarga opaca en vez de la
+ * imagen que el cliente esperaba ver. Decide solo la cabecera de salida; nunca
+ * se usa para admitir un archivo nuevo.
+ */
+function aiServableMime($mime) {
+    $mime = strtolower(trim((string)$mime));
+    if (aiExtensionForMime($mime)) return $mime;
+    if (in_array($mime, ['image/heic', 'image/heif'], true)) return $mime;
+    return 'application/octet-stream';
 }
 
 /**
@@ -1603,6 +1634,24 @@ function aiCreateUploadRecord($clientId, $fileMeta, $docTypeHint = 'auto', $uplo
 }
 
 /**
+ * Margen tras el cual se da por muerto un procesado que quedo a medias.
+ * aiProcessUpload() se da 180s de reloj; 10 minutos deja sitio de sobra para
+ * una llamada lenta sin dejar la factura bloqueada indefinidamente.
+ */
+function aiProcessingStaleSeconds() {
+    return 600;
+}
+
+/** True si el 'processing' de esta fila es de un intento que ya no corre. */
+function aiProcessingIsStale(array $upload) {
+    $started = $upload['processing_started_at'] ?? null;
+    // Filas anteriores a la columna: no hay forma de saber cuando arranco, y
+    // dejarlas retomar es mejor que dejarlas trabadas para siempre.
+    if (empty($started)) return true;
+    return (time() - strtotime((string)$started)) > aiProcessingStaleSeconds();
+}
+
+/**
  * Borra las extracciones previas de un upload dejando la contabilidad limpia.
  * Si alguna estaba aprobada, primero la revierte (saca su fila del 606/607 y
  * recalcula el formulario y el IT-1) para no dejar filas huerfanas en la
@@ -1641,7 +1690,7 @@ function aiProcessUpload($uploadId) {
     $upload = $u->fetch();
     if (!$upload) return ['ok' => false, 'error' => 'Upload no encontrado.'];
 
-    if ($upload['status'] === 'processing') {
+    if ($upload['status'] === 'processing' && !aiProcessingIsStale($upload)) {
         return ['ok' => false, 'error' => 'Ya esta siendo procesado.'];
     }
 
@@ -1649,24 +1698,40 @@ function aiProcessUpload($uploadId) {
     $client->execute([$upload['client_id']]);
     $cli = $client->fetch() ?: [];
 
-    // Limpia la extraccion anterior antes de volver a extraer. Sin esto cada
-    // reproceso dejaba una fila mas en invoice_extractions (upload_id solo
-    // tiene INDEX, no UNIQUE): el LEFT JOIN del listado devolvia la factura
-    // duplicada y el resumen del periodo sumaba el ITBIS dos veces. Peor aun,
-    // si la anterior ya estaba aprobada su fila del 606/607 quedaba huerfana y
-    // al aprobar la nueva se insertaba el mismo NCF por segunda vez.
-    aiPurgeExtractionsForUpload($uploadId);
+    // Se mira si ya habia extraccion ANTES de tocar nada, para saber que hacer
+    // si la IA falla.
+    $prev = $pdo->prepare("SELECT COUNT(*) FROM invoice_extractions WHERE upload_id=?");
+    $prev->execute([$uploadId]);
+    $hadPrevious = (int)$prev->fetchColumn() > 0;
 
-    $pdo->prepare("UPDATE invoice_uploads SET status='processing' WHERE id=?")->execute([$uploadId]);
+    $pdo->prepare("UPDATE invoice_uploads SET status='processing', processing_started_at=NOW() WHERE id=?")
+        ->execute([$uploadId]);
 
     $absPath = aiUploadsDir() . '/' . $upload['filename'];
     $res = aiExtractInvoiceFromFile($absPath, $upload['mime_type'], $cli ?: []);
 
     if (!$res['ok']) {
+        // Nada se ha borrado todavia: la extraccion anterior sigue entera y, si
+        // estaba aprobada, su fila del 606/607 tambien. Se devuelve el upload a
+        // su estado previo en vez de marcarlo 'error', que era como un fallo de
+        // red dejaba una factura buena sin datos y fuera de la declaracion.
+        if ($hadPrevious) {
+            $pdo->prepare("UPDATE invoice_uploads SET status=?, error_message=? WHERE id=?")
+                ->execute([$upload['status'], substr($res['error'] ?? 'Error', 0, 1000), $uploadId]);
+            return ['ok' => false, 'error' => $res['error'] ?? 'Error desconocido', 'kept_previous' => true];
+        }
         $pdo->prepare("UPDATE invoice_uploads SET status='error', error_message=?, processed_at=NOW() WHERE id=?")
             ->execute([substr($res['error'] ?? 'Error', 0, 1000), $uploadId]);
         return ['ok' => false, 'error' => $res['error'] ?? 'Error desconocido'];
     }
+
+    // La IA respondio: recien ahora se retira la extraccion anterior, con una
+    // nueva lista para ocupar su lugar. Sin esta limpieza cada reproceso dejaba
+    // una fila mas en invoice_extractions (upload_id solo tiene INDEX, no
+    // UNIQUE): el LEFT JOIN del listado devolvia la factura duplicada, el
+    // resumen del periodo sumaba el ITBIS dos veces y, si la anterior estaba
+    // aprobada, al aprobar la nueva se insertaba el mismo NCF otra vez.
+    aiPurgeExtractionsForUpload($uploadId);
 
     $d = $res['data'];
     // Respect explicit doc type hint if it is not 'auto'

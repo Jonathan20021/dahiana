@@ -370,7 +370,7 @@ $it1_balance = $it1_charged - $it1_paid;
                 ZIP completo
             </a>
             <?php if ($selectedFiling['status'] !== 'enviado'): ?>
-            <form method="POST" class="inline" onsubmit="return confirm('Marcar como enviado a DGII? Tambien marcara la obligacion como completada.')">
+            <form method="POST" class="inline" onsubmit="return confirm('Marcar como enviado a DGII? Tambien marcara la obligacion como completada.')"><?= csrfField() ?>
                 <input type="hidden" name="action" value="mark_sent">
                 <button type="submit" class="btn-dark text-sm">Marcar enviado</button>
             </form>
@@ -458,7 +458,7 @@ $it1Composition = $it1Rows->fetchAll();
     <!-- Add row form -->
     <div class="surface-card p-5">
         <h4 class="text-sm font-bold text-slate-900 mb-3">Agregar linea</h4>
-        <form method="POST" class="space-y-2">
+        <form method="POST" class="space-y-2"><?= csrfField() ?>
             <input type="hidden" name="action" value="add_row">
             <?php if ($type !== '608'): ?>
             <div>
@@ -558,7 +558,7 @@ $it1Composition = $it1Rows->fetchAll();
     <div class="surface-card p-5 lg:col-span-2">
         <h4 class="text-sm font-bold text-slate-900 mb-2">Importar desde CSV</h4>
         <p class="text-xs text-slate-500 mb-3">Sube un CSV con columnas: <code class="font-mono bg-stone-100 px-1 rounded">rnc, ncf, ncf_modificado, tipo, fecha_comprobante, fecha_pago, monto, itbis, isr_ret, itbis_ret</code></p>
-        <form method="POST" enctype="multipart/form-data" class="flex flex-col sm:flex-row gap-2">
+        <form method="POST" enctype="multipart/form-data" class="flex flex-col sm:flex-row gap-2"><?= csrfField() ?>
             <input type="hidden" name="action" value="import_csv">
             <input type="file" name="csv_file" accept=".csv" required class="field !text-sm flex-1">
             <button type="submit" class="btn-dark text-sm">Importar</button>
@@ -605,7 +605,7 @@ $it1Composition = $it1Rows->fetchAll();
                     <td class="px-4 py-2 text-right text-slate-500">RD$ <?= number_format((float)$r['isr_retention'], 2) ?></td>
                     <?php endif; ?>
                     <td class="px-4 py-2 text-right">
-                        <form method="POST" class="inline" onsubmit="return confirm('Eliminar esta linea?')">
+                        <form method="POST" class="inline" onsubmit="return confirm('Eliminar esta linea?')"><?= csrfField() ?>
                             <input type="hidden" name="action" value="delete_row">
                             <input type="hidden" name="row_id" value="<?= $r['id'] ?>">
                             <button type="submit" class="text-red-400 hover:text-red-600 text-xs font-semibold">Eliminar</button>
@@ -714,7 +714,7 @@ $it1Composition = $it1Rows->fetchAll();
                         class="tf-icon-btn" title="Editar estado y notas">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                 </button>
-                <form method="POST" class="inline-flex" onsubmit="return confirm('Eliminar este formulario y todas sus lineas? Esta accion no se puede deshacer.')">
+                <form method="POST" class="inline-flex" onsubmit="return confirm('Eliminar este formulario y todas sus lineas? Esta accion no se puede deshacer.')"><?= csrfField() ?>
                     <input type="hidden" name="action" value="delete_filing">
                     <input type="hidden" name="filing_id" value="<?= $f['id'] ?>">
                     <button type="submit" class="tf-icon-btn tf-icon-danger" title="Eliminar formulario">
@@ -795,7 +795,7 @@ $it1Composition = $it1Rows->fetchAll();
                 </div>
                 <button type="button" onclick="closeEditFiling()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form method="POST" class="p-6 space-y-4">
+            <form method="POST" class="p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" value="edit_filing">
                 <input type="hidden" name="filing_id" id="editFilingId" value="">
                 <div>
@@ -848,7 +848,7 @@ function closeEditFiling() {
 <?php else: ?>
 <div class="surface-card p-5">
     <h4 class="text-sm font-bold text-slate-900 mb-3">Nuevo formulario <?= $type ?> <?= $periodLabel ?></h4>
-    <form method="POST" class="flex flex-col sm:flex-row gap-2">
+    <form method="POST" class="flex flex-col sm:flex-row gap-2"><?= csrfField() ?>
         <input type="hidden" name="action" value="create_filing">
         <select name="client_id" required class="field text-sm flex-1">
             <option value="">Selecciona un cliente...</option>

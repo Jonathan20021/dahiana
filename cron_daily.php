@@ -176,6 +176,23 @@ try {
     $n = $pdo->exec("DELETE FROM ai_rate_limits WHERE updated_at < DATE_SUB(NOW(), INTERVAL 2 DAY)");
     cronLog('Cleanup ai_rate_limits', ['deleted' => $n]);
 
+    // Facturas trabadas en 'processing': el request que las estaba procesando
+    // murio a mitad (timeout, 500, worker que no volvio). aiProcessUpload() ya
+    // las deja retomar pasado su margen, pero mientras tanto no aparecen como
+    // error en ningun lado y nadie se entera. Se marcan para que salgan en el
+    // filtro de errores y se puedan reprocesar a mano.
+    $stuck = $pdo->prepare("
+        UPDATE invoice_uploads
+        SET status = 'error',
+            error_message = 'El procesado quedo a medias en el servidor. Vuelve a intentarlo.',
+            processed_at = NOW()
+        WHERE status = 'processing'
+          AND (processing_started_at IS NULL OR processing_started_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
+          AND created_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+    ");
+    $stuck->execute();
+    if ($stuck->rowCount() > 0) cronLog('Uploads trabados en processing', ['recuperados' => $stuck->rowCount()]);
+
     cronLog('Cron completed', ['duration_ms' => round((microtime(true) - $startTime) * 1000)]);
 
 } catch (Throwable $e) {

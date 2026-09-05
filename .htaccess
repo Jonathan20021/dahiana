@@ -40,6 +40,16 @@ RedirectMatch 404 (?i)/\.(git|svn|hg|env|vscode|idea|ds_store|htpasswd)
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
-    # La cookie de sesion nunca deberia salir en una respuesta cacheada
-    Header always set Cache-Control "no-store" "expr=%{REQUEST_URI} =~ m#\.php$#"
+    # La cookie de sesion nunca deberia salir en una respuesta cacheada.
+    #
+    # serve_invoice.php queda fuera a proposito: es un .php, pero devuelve la
+    # imagen de una factura, no HTML con la sesion dentro. Con el no-store el
+    # navegador volvia a bajar todas las miniaturas en cada recarga del listado
+    # -- varios MB por vista, y el portal se usa sobre todo desde el telefono.
+    # Se excluye en vez de sobreescribirlo despues porque "Header always" mete
+    # su valor en err_headers_out, que se suma a lo que puso PHP en lugar de
+    # reemplazarlo: quedaban dos Cache-Control peleando. Asi manda el script,
+    # que ya distingue entre servir el archivo (cache privada de 10 minutos) y
+    # responder 401/404 (sin cache).
+    Header always set Cache-Control "no-store" "expr=%{REQUEST_URI} =~ m#\.php$# && %{REQUEST_URI} !~ m#/serve_invoice\.php$#"
 </IfModule>

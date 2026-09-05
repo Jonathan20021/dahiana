@@ -239,7 +239,7 @@ include 'components/layout_start.php';
     </aside>
 
     <!-- Panels -->
-    <form action="admin_settings.php" method="POST" class="settings-content space-y-4" id="settingsForm">
+    <form action="admin_settings.php" method="POST" class="settings-content space-y-4" id="settingsForm"><?= csrfField() ?>
         <input type="hidden" name="action" value="save_settings">
 
         <!-- IDENTITY -->
@@ -645,14 +645,14 @@ include 'components/layout_start.php';
                 <p class="text-[11px] text-slate-500 mt-0.5">Despues de guardar el token, conecta el webhook para recibir mensajes.</p>
             </div>
             <div class="p-5 flex flex-col sm:flex-row gap-2">
-                <form method="POST" class="inline">
+                <form method="POST" class="inline"><?= csrfField() ?>
                     <input type="hidden" name="action" value="telegram_set_webhook">
                     <button type="submit" class="btn-dark text-sm" <?= $hasToken ? '' : 'disabled style="opacity:.5;cursor:not-allowed"' ?>>
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 015.656 5.656l-3 3a4 4 0 01-5.656-5.656l1.1-1.1"/><path stroke-linecap="round" stroke-linejoin="round" d="M10.172 13.828a4 4 0 01-5.656-5.656l3-3a4 4 0 015.656 5.656l-1.1 1.1"/></svg>
                         Conectar / actualizar webhook
                     </button>
                 </form>
-                <form method="POST" class="inline">
+                <form method="POST" class="inline"><?= csrfField() ?>
                     <input type="hidden" name="action" value="telegram_delete_webhook">
                     <button type="submit" class="btn-soft text-sm">Desconectar webhook</button>
                 </form>
@@ -665,7 +665,7 @@ include 'components/layout_start.php';
                     <h3 class="text-sm font-bold text-slate-900">Prueba de envio de correo</h3>
                     <p class="text-[11px] text-slate-500 mt-0.5">Envia un correo de prueba con la configuracion actual.</p>
                 </div>
-                <form action="admin_settings.php" method="POST" class="p-5 flex flex-col sm:flex-row gap-2">
+                <form action="admin_settings.php" method="POST" class="p-5 flex flex-col sm:flex-row gap-2"><?= csrfField() ?>
                     <input type="hidden" name="action" value="test_email">
                     <input type="email" name="test_to" required placeholder="correo@destino.com" class="field text-sm flex-1">
                     <button type="submit" class="btn-dark text-sm">Enviar prueba</button>

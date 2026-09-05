@@ -156,7 +156,7 @@ include 'components/layout_start.php';
                 <button type="button" onclick="openModal('editRoleModal<?= $role['id'] ?>')" class="btn-soft text-xs">Editar</button>
                 <?php endif; ?>
                 <?php if (!$isSystem): ?>
-                <form action="admin_roles.php" method="POST" onsubmit="return confirm('Eliminar este rol?')">
+                <form action="admin_roles.php" method="POST" onsubmit="return confirm('Eliminar este rol?')"><?= csrfField() ?>
                     <input type="hidden" name="action" value="delete_role">
                     <input type="hidden" name="role_id" value="<?= $role['id'] ?>">
                     <input type="hidden" name="slug" value="<?= htmlspecialchars($role['slug']) ?>">
@@ -195,7 +195,7 @@ include 'components/layout_start.php';
                 </div>
                 <button type="button" onclick="closeModal('createRoleModal')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_roles.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <form action="admin_roles.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" value="add_role">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -266,7 +266,7 @@ include 'components/layout_start.php';
                 </div>
                 <button type="button" onclick="closeModal('editRoleModal<?= $role['id'] ?>')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form action="admin_roles.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <form action="admin_roles.php" method="POST" class="flex-1 overflow-y-auto p-6 space-y-4"><?= csrfField() ?>
                 <input type="hidden" name="action" value="edit_role">
                 <input type="hidden" name="role_id" value="<?= $role['id'] ?>">
                 <input type="hidden" name="current_slug" value="<?= htmlspecialchars($role['slug']) ?>">

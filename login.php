@@ -120,7 +120,7 @@ $companySlogan   = trim(getSetting('company_slogan', 'Tu asesoria financiera a u
                 </div>
                 <?php endif; ?>
 
-                <form action="auth.php?action=login" method="POST" class="space-y-5">
+                <form action="auth.php?action=login" method="POST" class="space-y-5"><?= csrfField() ?>
                     <div>
                         <label for="email" class="block text-[12px] font-semibold text-slate-600 mb-2 uppercase tracking-wider">Correo electronico</label>
                         <input type="email" id="email" name="email" required autocomplete="email"

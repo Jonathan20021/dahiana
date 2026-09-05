@@ -516,7 +516,7 @@ include 'components/layout_start.php';
                             <button type="button" class="v-action" title="Editar" onclick="openVaultEdit(<?= (int)$cr['id'] ?>)">
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                             </button>
-                            <form method="POST" class="inline" onsubmit="return confirm('Eliminar este acceso? Esta accion no se puede deshacer.')">
+                            <form method="POST" class="inline" onsubmit="return confirm('Eliminar este acceso? Esta accion no se puede deshacer.')"><?= csrfField() ?>
                                 <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
                                 <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="id" value="<?= (int)$cr['id'] ?>">
@@ -552,7 +552,7 @@ include 'components/layout_start.php';
                 </div>
                 <button type="button" onclick="hideModal('vaultFormModal')" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
             </div>
-            <form id="vaultForm" method="POST" action="admin_vault.php" class="p-6 space-y-4 max-h-[78vh] overflow-y-auto scroll-area">
+            <form id="vaultForm" method="POST" action="admin_vault.php" class="p-6 space-y-4 max-h-[78vh] overflow-y-auto scroll-area"><?= csrfField() ?>
                 <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="id" value="">

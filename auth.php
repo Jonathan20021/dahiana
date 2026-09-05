@@ -3,6 +3,11 @@ require_once 'config.php';
 
 $action = $_GET['action'] ?? '';
 
+// auth.php no llama a requireAuth() (es el que crea la sesion), asi que el
+// token se valida a mano. Sin esto un formulario en otro sitio podia iniciar
+// sesion en el navegador de la victima con una cuenta del atacante.
+requireCsrf();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'login') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';

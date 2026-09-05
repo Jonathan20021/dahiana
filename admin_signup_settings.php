@@ -78,7 +78,7 @@ include 'components/layout_start.php';
 <div class="mb-4 rounded-2xl bg-emerald-50 px-4 py-3 border border-emerald-100 text-sm font-medium text-emerald-800"><?= htmlspecialchars($success) ?></div>
 <?php endif; ?>
 
-<form method="POST" class="space-y-5">
+<form method="POST" class="space-y-5"><?= csrfField() ?>
     <input type="hidden" name="action" value="save">
 
     <!-- Estado del registro publico -->

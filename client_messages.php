@@ -202,7 +202,7 @@ include 'components/layout_start.php';
         </div>
 
         <footer class="chat-input">
-            <form method="POST" class="flex items-end gap-2">
+            <form method="POST" class="flex items-end gap-2"><?= csrfField() ?>
                 <input type="hidden" name="action" value="send_general">
                 <div class="flex-1 relative">
                     <textarea name="message" rows="1" placeholder="Escribe un mensaje a tu asesor..." required
