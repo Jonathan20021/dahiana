@@ -22,6 +22,17 @@ RedirectMatch 404 (?i)/\.(git|svn|hg|env|vscode|idea|ds_store|htpasswd)
     RewriteEngine On
     # Cualquier ruta con un componente que empiece por punto
     RewriteRule (^|/)\. - [F,L]
+
+    # --- Facturas: solo por serve_invoice.php ---
+    # aiHardenUploadsDir() escribe un .htaccess dentro de uploads/invoices/,
+    # pero solo corre cuando algo llama a aiUploadsDir(), y todos esos sitios
+    # estan detras del login: recien desplegado, y hasta que alguien suba o
+    # abra una factura, el directorio se queda sin proteger. Si ademas no hay
+    # permiso de escritura, no se protege nunca. Esta regla no depende de nada
+    # en runtime: viaja en el repositorio y bloquea desde el primer request.
+    # readfile() desde PHP no pasa por aqui, asi que serve_invoice.php sigue
+    # sirviendo el archivo con normalidad.
+    RewriteRule ^uploads/invoices/ - [F,L]
 </IfModule>
 
 # --- Archivos sensibles por nombre o extension ---
