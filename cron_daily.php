@@ -164,6 +164,18 @@ try {
         cronLog('Old error uploads', ['count' => $old, 'note' => 'Considerar limpieza manual']);
     }
 
+    // ========================================================================
+    // 8. Descargas de Telegram a medias (.part) y cupos de rate limit vencidos
+    // ========================================================================
+    $orphans = 0;
+    foreach ((glob(aiUploadsDir() . '/*.part') ?: []) as $part) {
+        if (filemtime($part) < time() - 3600 && @unlink($part)) $orphans++;
+    }
+    if ($orphans > 0) cronLog('Cleanup .part huerfanos', ['deleted' => $orphans]);
+
+    $n = $pdo->exec("DELETE FROM ai_rate_limits WHERE updated_at < DATE_SUB(NOW(), INTERVAL 2 DAY)");
+    cronLog('Cleanup ai_rate_limits', ['deleted' => $n]);
+
     cronLog('Cron completed', ['duration_ms' => round((microtime(true) - $startTime) * 1000)]);
 
 } catch (Throwable $e) {

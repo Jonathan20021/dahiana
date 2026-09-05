@@ -84,7 +84,9 @@ echo json_encode([
             'files' => [
                 [
                     'name'    => 'files[]',
-                    'accept'  => ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'],
+                    // Sin HEIC: ningun proveedor de vision lo lee, compartirlo
+                    // solo servia para que la factura terminara en error.
+                    'accept'  => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
                 ],
             ],
         ],

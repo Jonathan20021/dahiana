@@ -56,34 +56,37 @@ function tgProcessPhoto(array $photoOrDoc, int $chatId, array $client, string $c
         return;
     }
 
-    $mime = $file['mime_type'] ?? '';
-    if ($mime === '') {
-        $ext = strtolower(pathinfo($remotePath, PATHINFO_EXTENSION));
-        $mime = match ($ext) {
-            'jpg','jpeg' => 'image/jpeg',
-            'png'        => 'image/png',
-            'webp'       => 'image/webp',
-            'heic','heif'=> 'image/heic',
-            'pdf'        => 'application/pdf',
-            default      => 'image/jpeg',
-        };
-    }
-    $isImage = strpos($mime, 'image/') === 0;
-    $isPdf   = $mime === 'application/pdf';
-    if (!$isImage && !$isPdf) {
-        $msg = "Solo proceso fotos (JPG, PNG, WEBP, HEIC) o PDF. Recibi <code>" . htmlspecialchars($mime) . "</code>.\nReenvialo como foto o exportalo a PDF.";
-        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
-        return;
-    }
-
-    $ext = pathinfo($remotePath, PATHINFO_EXTENSION) ?: 'jpg';
-    $filename = 'inv_' . $client['client_id'] . '_tg_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . strtolower($ext);
-    $dest = aiUploadsDir() . '/' . $filename;
-    if (!tgDownloadFile($remotePath, $dest)) {
+    // Ni el mime_type ni la extension que reporta Telegram deciden nada: los
+    // fija quien envia el documento. Se descarga a un .part (extension inerte)
+    // y solo despues de mirar los magic bytes se renombra al nombre definitivo.
+    // Antes un documento llamado `x.php` con mime_type falso quedaba guardado
+    // como .php dentro del docroot.
+    $dir  = aiUploadsDir();
+    $part = $dir . '/tmp_' . bin2hex(random_bytes(8)) . '.part';
+    if (!tgDownloadFile($remotePath, $part)) {
+        @unlink($part);
         if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, 'No pude descargar el archivo de Telegram.');
         return;
     }
-    $size = @filesize($dest);
+
+    $check = aiInspectUploadedFile($part, $sizeLimit);
+    if (isset($check['error'])) {
+        @unlink($part);
+        $msg = "No pude usar ese archivo: " . htmlspecialchars($check['error']) . ".\nMandalo como foto JPG/PNG o exportalo a PDF.";
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, $msg);
+        return;
+    }
+    $mime = $check['mime'];
+
+    $filename = aiBuildStoredFilename((int)$client['client_id'], $check['ext'], 'tg');
+    $dest = $dir . '/' . $filename;
+    if (!@rename($part, $dest)) {
+        @unlink($part);
+        if ($ackMessageId) tgEditMessage($chatId, $ackMessageId, 'No pude guardar el archivo: ' . htmlspecialchars(aiStoreFailureReason($dir)) . '.');
+        return;
+    }
+    @chmod($dest, 0644);
+    $size = $check['size'];
     $sha  = @hash_file('sha256', $dest);
 
     if ($sha && aiFindDuplicateUpload((int)$client['client_id'], $sha) > 0) {

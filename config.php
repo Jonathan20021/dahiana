@@ -1,4 +1,32 @@
 <?php
+// ---------------------------------------------------------------------------
+// Sesion. Estos parametros no estaban definidos y el php.ini los dejaba en sus
+// valores por defecto mas laxos:
+//   - cookie_httponly vacio  -> cualquier XSS podia leer PHPSESSID y robar la sesion
+//   - cookie_samesite vacio  -> nada frenaba los POST cross-site (CSRF)
+//   - use_strict_mode 0      -> PHP aceptaba un id de sesion elegido por el
+//                               atacante, que es fijacion de sesion directa
+// Se fijan aqui, en codigo, para no depender de la configuracion del servidor.
+// ---------------------------------------------------------------------------
+if (session_status() === PHP_SESSION_NONE) {
+    @ini_set('session.use_strict_mode', '1');
+    @ini_set('session.use_only_cookies', '1');
+
+    // secure solo bajo HTTPS: forzarlo en un sitio HTTP dejaria a todos fuera.
+    $isHttps = (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off')
+        || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443
+        || strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path'     => '/',
+        'httponly' => true,
+        'secure'   => $isHttps,
+        // Lax y no Strict: Strict rompe el volver al portal desde un enlace de
+        // correo. Lax ya bloquea el POST cross-site, que es el vector de CSRF.
+        'samesite' => 'Lax',
+    ]);
+}
 session_start();
 
 // Database configuration
@@ -333,10 +361,15 @@ function bootstrapCrmSchema() {
             )
         ");
 
-        // Semilla de settings de email (solo si no existen)
+        // Semilla de settings de email (solo si no existen).
+        // La API key de Resend NO se versiona: estaba escrita aqui en claro y el
+        // repositorio es publico, asi que cualquiera con el repo podia mandar
+        // correo en nombre del portal. Se configura desde Ajustes > Email, que la
+        // guarda en la tabla settings; en una instalacion nueva se puede sembrar
+        // con la variable de entorno RESEND_API_KEY.
         $defaults = [
             'email_enabled'      => '1',
-            'resend_api_key'     => 're_GYcmrt6X_96y7HETGCn4Dkmp6cz3o97jQ',
+            'resend_api_key'     => (string)(getenv('RESEND_API_KEY') ?: ''),
             'email_from'         => 'no-reply@kyrosrd.com',
             'email_from_name'    => '',
             'email_reply_to'     => '',
@@ -436,6 +469,44 @@ function getClientStatusBadge($status) {
 
 function getBusinessTypeLabel($type) {
     return $type === 'juridica' ? 'Persona Juridica' : 'Persona Fisica';
+}
+
+// ==========================================================================
+// CSRF
+// Un formulario en otro sitio podia hacer que un admin logueado aprobara o
+// borrara facturas con solo visitar la pagina. El token vive en la sesion y
+// viaja en un campo oculto en cada POST que cambia estado.
+// ==========================================================================
+
+function csrfToken() {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/** Campo oculto listo para pegar dentro de un <form method="POST">. */
+function csrfField() {
+    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(csrfToken(), ENT_QUOTES) . '">';
+}
+
+/** True si el POST actual trae un token valido. */
+function csrfValid() {
+    $sent = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+    return !empty($_SESSION['csrf_token'])
+        && is_string($sent)
+        && hash_equals($_SESSION['csrf_token'], $sent);
+}
+
+/**
+ * Corta la peticion si el token no cuadra. Devuelve true para poder usarse
+ * como guarda en un if sin duplicar la comprobacion.
+ */
+function requireCsrf() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') return true;
+    if (csrfValid()) return true;
+    http_response_code(419);
+    die('Sesion expirada o solicitud no valida. Vuelve atras, recarga la pagina e intentalo de nuevo.');
 }
 
 // ==========================================================================

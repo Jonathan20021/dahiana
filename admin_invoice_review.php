@@ -5,6 +5,14 @@ requirePagePermission();
 
 $success = $error = null;
 
+// Flash del ciclo anterior (POST-Redirect-GET): refrescar ya no reenvia la
+// aprobacion o el borrado.
+if (!empty($_SESSION['ir_flash'])) {
+    $success = $_SESSION['ir_flash']['success'] ?? null;
+    $error   = $_SESSION['ir_flash']['error'] ?? null;
+    unset($_SESSION['ir_flash']);
+}
+
 $period = $_GET['period'] ?? date('Y-m');
 $showAllPeriods = ($period === 'all');
 if (!$showAllPeriods && !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) $period = date('Y-m');
@@ -17,12 +25,58 @@ $filterClient = (int)($_GET['client_id'] ?? 0);
 $filterStatus = $_GET['status'] ?? 'pending';
 $filterType   = $_GET['doc_type'] ?? '';
 
+/** Redirige conservando los filtros actuales. */
+function irRedirect($success = null, $error = null) {
+    $_SESSION['ir_flash'] = ['success' => $success, 'error' => $error];
+    $qs = http_build_query(array_filter([
+        'period'    => $_GET['period']    ?? null,
+        'client_id' => $_GET['client_id'] ?? null,
+        'status'    => $_GET['status']    ?? null,
+        'doc_type'  => $_GET['doc_type']  ?? null,
+    ], fn($v) => $v !== null && $v !== ''));
+    header('Location: admin_invoice_review.php' . ($qs ? '?' . $qs : ''));
+    exit;
+}
+
+/**
+ * El listado ya se filtra con clientScopeWhere(), pero las acciones POST
+ * tomaban el id crudo: un usuario staff asignado al cliente A podia aprobar o
+ * borrar facturas del cliente B cambiando el numero. Estas dos guardas atan
+ * cada accion al scope real del usuario.
+ */
+function irUploadInScope($uploadId) {
+    global $pdo;
+    $st = $pdo->prepare("SELECT client_id FROM invoice_uploads WHERE id=?");
+    $st->execute([(int)$uploadId]);
+    $cid = $st->fetchColumn();
+    return ($cid !== false && clientAccessibleByUser((int)$cid)) ? (int)$cid : false;
+}
+
+function irExtractionInScope($extractionId) {
+    global $pdo;
+    $st = $pdo->prepare("SELECT client_id FROM invoice_extractions WHERE id=?");
+    $st->execute([(int)$extractionId]);
+    $cid = $st->fetchColumn();
+    return ($cid !== false && clientAccessibleByUser((int)$cid)) ? (int)$cid : false;
+}
+
+// Igual que en el portal del cliente: si el POST pasa post_max_size, PHP
+// descarta $_POST y $_FILES y la pagina recargaba sin ningun mensaje.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && empty($_FILES)
+    && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    irRedirect(null, 'Los archivos superan el limite del servidor (' . ini_get('post_max_size') . ' por envio). Subelas en tandas mas pequenas.');
+}
+
 // Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrf();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'update_extraction') {
         $eid = (int)($_POST['extraction_id'] ?? 0);
+        if ($eid > 0 && irExtractionInScope($eid) === false) {
+            irRedirect(null, 'No tienes acceso a esa factura.');
+        }
         if ($eid > 0) {
             $fields = [
                 'doc_type'         => $_POST['doc_type'] ?? 'compra',
@@ -74,47 +128,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $rowInfo->execute([$eid]);
             $ri = $rowInfo->fetch();
             if ($ri && !empty($ri['filing_row_id'])) {
-                $res = aiApproveExtraction($eid, $_SESSION['user_id'] ?? null); // re-syncs the row
+                aiApproveExtraction($eid, $_SESSION['user_id'] ?? null); // re-syncs the row
             }
-            $success = 'Datos actualizados.';
+            irRedirect('Datos actualizados.');
         }
+        irRedirect();
     } elseif ($action === 'approve') {
         $eid = (int)($_POST['extraction_id'] ?? 0);
+        if ($eid > 0 && irExtractionInScope($eid) === false) {
+            irRedirect(null, 'No tienes acceso a esa factura.');
+        }
         if ($eid > 0) {
             $res = aiApproveExtraction($eid, $_SESSION['user_id'] ?? null);
-            if ($res['ok']) {
-                $success = "Aprobada y agregada al {$res['filing_type']} de {$res['period']}.";
-            } else {
-                $error = $res['error'] ?? 'Error al aprobar.';
-            }
+            $res['ok']
+                ? irRedirect("Aprobada y agregada al {$res['filing_type']} de {$res['period']}.")
+                : irRedirect(null, $res['error'] ?? 'Error al aprobar.');
         }
+        irRedirect();
     } elseif ($action === 'reject') {
         $eid = (int)($_POST['extraction_id'] ?? 0);
+        if ($eid > 0 && irExtractionInScope($eid) === false) {
+            irRedirect(null, 'No tienes acceso a esa factura.');
+        }
         if ($eid > 0) {
             $res = aiRejectExtraction($eid);
-            $success = $res['ok'] ? 'Extraccion rechazada y removida del formulario.' : ($res['error'] ?? 'Error.');
+            $res['ok']
+                ? irRedirect('Extraccion rechazada y removida del formulario.')
+                : irRedirect(null, $res['error'] ?? 'Error.');
         }
+        irRedirect();
     } elseif ($action === 'reprocess') {
         $uid = (int)($_POST['upload_id'] ?? 0);
-        if ($uid > 0) {
-            $res = aiProcessUpload($uid);
-            $success = $res['ok'] ? 'Reprocesada con IA.' : null;
-            $error   = $res['ok'] ? null : ($res['error'] ?? 'Error.');
+        if ($uid > 0 && irUploadInScope($uid) === false) {
+            irRedirect(null, 'No tienes acceso a esa factura.');
         }
+        if ($uid > 0) {
+            if (!aiCheckUploadRateLimit((int)($_SESSION['user_id'] ?? 0), aiStaffRateLimit())) {
+                irRedirect(null, 'Llegaste al limite de llamadas a la IA por hora.');
+            }
+            // Si estaba aprobada, aiProcessUpload la saca del 606/607 antes de
+            // volver a extraer. Hay que decirlo: la declaracion cambio.
+            $wasApproved = (int)$pdo->query("SELECT COUNT(*) FROM invoice_extractions WHERE upload_id=" . (int)$uid . " AND approved=1")->fetchColumn() > 0;
+            $res = aiProcessUpload($uid);
+            if ($res['ok']) {
+                irRedirect('Reprocesada con IA.' . ($wasApproved ? ' Estaba aprobada: se removio del formulario y queda pendiente de aprobar otra vez.' : ''));
+            }
+            irRedirect(null, $res['error'] ?? 'Error.');
+        }
+        irRedirect();
     } elseif ($action === 'bulk_approve') {
         $ids = $_POST['ids'] ?? [];
         if (!is_array($ids)) $ids = [];
-        $ok = 0;
+        $ok = 0; $skipped = 0;
         foreach ($ids as $eid) {
             $eid = (int)$eid;
-            if ($eid > 0) {
-                $r = aiApproveExtraction($eid, $_SESSION['user_id'] ?? null);
-                if ($r['ok']) $ok++;
-            }
+            if ($eid <= 0) continue;
+            if (irExtractionInScope($eid) === false) { $skipped++; continue; }
+            $r = aiApproveExtraction($eid, $_SESSION['user_id'] ?? null);
+            if ($r['ok']) $ok++;
         }
-        $success = "{$ok} factura(s) aprobada(s) e insertada(s) en sus formularios.";
+        irRedirect("{$ok} factura(s) aprobada(s) e insertada(s) en sus formularios."
+            . ($skipped ? " {$skipped} omitida(s) por falta de acceso." : ''));
     } elseif ($action === 'delete_upload') {
         $uid = (int)($_POST['upload_id'] ?? 0);
+        if ($uid > 0 && irUploadInScope($uid) === false) {
+            irRedirect(null, 'No tienes acceso a esa factura.');
+        }
         if ($uid > 0) {
             // Free filing row if it was already approved
             $ex = $pdo->prepare("SELECT id FROM invoice_extractions WHERE upload_id=? AND approved=1");
@@ -126,90 +205,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $u->execute([$uid]);
             $row = $u->fetch();
             if ($row) {
-                @unlink(aiUploadsDir() . '/' . $row['filename']);
+                @unlink(aiUploadsDir() . '/' . basename($row['filename']));
                 $pdo->prepare("DELETE FROM invoice_extractions WHERE upload_id=?")->execute([$uid]);
                 $pdo->prepare("DELETE FROM invoice_uploads WHERE id=?")->execute([$uid]);
-                $success = 'Factura eliminada.';
+                irRedirect('Factura eliminada.');
             }
         }
+        irRedirect();
     } elseif ($action === 'upload') {
         $targetClient = (int)($_POST['target_client_id'] ?? 0);
         $docTypeHint  = $_POST['doc_type'] ?? 'auto';
         if (!in_array($docTypeHint, ['auto','compra','venta'], true)) $docTypeHint = 'auto';
 
         if ($targetClient <= 0) {
-            $error = 'Selecciona un cliente para asignarle estas facturas.';
-        } elseif (empty($_FILES['files']['name'][0])) {
-            $error = 'Selecciona al menos una foto de factura.';
-        } else {
-            $maxMb = (int)getSetting('openai_max_size_mb', '12');
-            $maxBytes = max(1, $maxMb) * 1024 * 1024;
-            $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
-            $dir = aiUploadsDir();
-            $okCount = 0; $fail = [];
-
-            $files = $_FILES['files'];
-            $n = count($files['name']);
-            for ($i = 0; $i < $n; $i++) {
-                if ($files['error'][$i] !== UPLOAD_ERR_OK) { $fail[] = $files['name'][$i] . ' (error subida)'; continue; }
-                $size = (int)$files['size'][$i];
-                $mime = (string)$files['type'][$i];
-                $orig = (string)$files['name'][$i];
-                $tmp  = (string)$files['tmp_name'][$i];
-                if (!in_array($mime, aiAcceptedMimes(), true)) {
-                    $info = @getimagesize($tmp);
-                    if ($info && !empty($info['mime'])) $mime = $info['mime'];
-                    elseif (strtolower(pathinfo($orig, PATHINFO_EXTENSION)) === 'pdf') $mime = 'application/pdf';
-                }
-                if (!in_array($mime, aiAcceptedMimes(), true)) { $fail[] = $orig . ' (formato no permitido)'; continue; }
-                if ($size > $maxBytes) { $fail[] = $orig . " (excede {$maxMb} MB)"; continue; }
-
-                $tmpSha = @hash_file('sha256', $tmp);
-                if ($tmpSha && aiFindDuplicateUpload($targetClient, $tmpSha) > 0) {
-                    $fail[] = $orig . ' (ya existe para este cliente)';
-                    continue;
-                }
-
-                $ext = pathinfo($orig, PATHINFO_EXTENSION) ?: 'jpg';
-                $filename = 'inv_' . $targetClient . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . strtolower($ext);
-                $dest = $dir . '/' . $filename;
-                if (!move_uploaded_file($tmp, $dest)) { $fail[] = $orig . ' (no guardado)'; continue; }
-
-                $uid = aiCreateUploadRecord($targetClient, [
-                    'filename'      => $filename,
-                    'original_name' => $orig,
-                    'mime_type'     => $mime,
-                    'file_size'     => $size,
-                    'sha256'        => hash_file('sha256', $dest),
-                ], $docTypeHint, $_SESSION['user_id'] ?? null);
-
-                if ($autoProcess) {
-                    $r = aiProcessUpload($uid);
-                    if (!$r['ok']) $fail[] = $orig . ' (' . $r['error'] . ')';
-                }
-                $okCount++;
-            }
-            if ($okCount > 0) {
-                logClientActivity($targetClient, 'invoice_upload', "Admin subio {$okCount} factura(s) en nombre del cliente");
-            }
-            $success = $okCount > 0
-                ? ("{$okCount} factura(s) subida(s)" . (empty($fail) ? '.' : '. Errores: ' . implode(', ', $fail)))
-                : null;
-            if (empty($success)) $error = 'No se pudo subir: ' . implode(', ', $fail);
+            irRedirect(null, 'Selecciona un cliente para asignarle estas facturas.');
         }
+        if (!clientAccessibleByUser($targetClient)) {
+            irRedirect(null, 'No tienes acceso a ese cliente.');
+        }
+        if (empty($_FILES['files']['name'][0])) {
+            irRedirect(null, 'Selecciona al menos una foto de factura.');
+        }
+
+        $maxMb = (int)getSetting('openai_max_size_mb', '12');
+        $maxBytes = max(1, $maxMb) * 1024 * 1024;
+        $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
+        $dir = aiUploadsDir();
+        $okCount = 0; $fail = [];
+
+        $files = $_FILES['files'];
+        $n = count($files['name']);
+        for ($i = 0; $i < $n; $i++) {
+            $orig = (string)$files['name'][$i];
+            if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                $fail[] = $orig . ' (' . aiUploadErrorText((int)$files['error'][$i]) . ')';
+                continue;
+            }
+            $tmp = (string)$files['tmp_name'][$i];
+            if (!is_uploaded_file($tmp)) { $fail[] = $orig . ' (subida invalida)'; continue; }
+
+            // MIME por magic bytes y extension derivada de el: el Content-Type
+            // del navegador es del cliente y no decide nada.
+            $check = aiInspectUploadedFile($tmp, $maxBytes);
+            if (isset($check['error'])) { $fail[] = $orig . ' (' . $check['error'] . ')'; continue; }
+
+            $tmpSha = @hash_file('sha256', $tmp);
+            if ($tmpSha && aiFindDuplicateUpload($targetClient, $tmpSha) > 0) {
+                $fail[] = $orig . ' (ya existe para este cliente)';
+                continue;
+            }
+
+            if ($autoProcess && !aiCheckUploadRateLimit((int)($_SESSION['user_id'] ?? 0), aiStaffRateLimit())) {
+                $fail[] = $orig . ' (limite de llamadas a la IA por hora)';
+                continue;
+            }
+
+            $filename = aiBuildStoredFilename($targetClient, $check['ext']);
+            $dest = $dir . '/' . $filename;
+            if (!move_uploaded_file($tmp, $dest)) {
+                $fail[] = $orig . ' (' . aiStoreFailureReason($dir) . ')';
+                continue;
+            }
+            @chmod($dest, 0644);
+
+            $uid = aiCreateUploadRecord($targetClient, [
+                'filename'      => $filename,
+                'original_name' => mb_substr($orig, 0, 240),
+                'mime_type'     => $check['mime'],
+                'file_size'     => $check['size'],
+                'sha256'        => hash_file('sha256', $dest),
+            ], $docTypeHint, $_SESSION['user_id'] ?? null);
+
+            if ($autoProcess) {
+                $r = aiProcessUpload($uid);
+                if (!$r['ok']) $fail[] = $orig . ' (' . $r['error'] . ')';
+            }
+            $okCount++;
+        }
+        if ($okCount > 0) {
+            logClientActivity($targetClient, 'invoice_upload', "Admin subio {$okCount} factura(s) en nombre del cliente");
+            irRedirect("{$okCount} factura(s) subida(s)" . (empty($fail) ? '.' : '. Errores: ' . implode(', ', $fail)));
+        }
+        irRedirect(null, 'No se pudo subir: ' . implode(', ', $fail));
     } elseif ($action === 'bulk_reprocess') {
         $ids = $_POST['upload_ids'] ?? [];
         if (!is_array($ids)) $ids = [];
-        $ok = 0;
+        $ok = 0; $skipped = 0; $limited = false;
         foreach ($ids as $uid) {
             $uid = (int)$uid;
-            if ($uid > 0) {
-                $r = aiProcessUpload($uid);
-                if ($r['ok']) $ok++;
-            }
+            if ($uid <= 0) continue;
+            if (irUploadInScope($uid) === false) { $skipped++; continue; }
+            if (!aiCheckUploadRateLimit((int)($_SESSION['user_id'] ?? 0), aiStaffRateLimit())) { $limited = true; break; }
+            $r = aiProcessUpload($uid);
+            if ($r['ok']) $ok++;
         }
-        $success = "{$ok} factura(s) reprocesada(s) con IA.";
+        irRedirect("{$ok} factura(s) reprocesada(s) con IA."
+            . ($skipped ? " {$skipped} omitida(s) por falta de acceso." : '')
+            . ($limited ? ' Se detuvo al llegar al limite de llamadas por hora.' : ''));
     }
+    irRedirect();
 }
 
 // Filters builder
@@ -262,12 +356,15 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
-// Clients dropdown
+// Clients dropdown. Limitado a los clientes asignados: antes listaba a todos,
+// filtrando el usuario staff podia leer nombres y razones sociales de clientes
+// que no le tocan, y el selector ofrecia destinos que la subida iba a rechazar.
 $clients = $pdo->query("
     SELECT u.id, u.name, u.business_name
     FROM users u
     LEFT JOIN roles r ON r.slug = u.role
     WHERE COALESCE(r.access_level, CASE WHEN u.role = 'admin' THEN 'admin' ELSE 'client' END) = 'client'
+      AND " . clientScopeWhere('u.id') . "
     ORDER BY u.name
 ")->fetchAll();
 
@@ -351,7 +448,7 @@ include 'components/layout_start.php';
         </div>
     </div>
 
-    <form method="POST" enctype="multipart/form-data" class="grid grid-cols-1 sm:grid-cols-12 gap-3" id="adminUploadForm">
+    <form method="POST" enctype="multipart/form-data" class="grid grid-cols-1 sm:grid-cols-12 gap-3" id="adminUploadForm"><?= csrfField() ?>
         <input type="hidden" name="action" value="upload">
         <div class="sm:col-span-5">
             <label class="field-label">Cliente destino</label>
@@ -381,7 +478,7 @@ include 'components/layout_start.php';
                 <svg class="w-6 h-6 mx-auto text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 100 18 9 9 0 000-18z"/></svg>
                 <p class="mt-1 text-sm font-semibold text-slate-700">Arrastra fotos aqui o haz click</p>
                 <p class="text-[11px] text-slate-400">JPG/PNG/WEBP o PDF. Multiple seleccion permitida.</p>
-                <input type="file" name="files[]" id="adminFileInput" accept="image/*,application/pdf,.pdf" multiple class="hidden">
+                <input type="file" name="files[]" id="adminFileInput" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.pdf" multiple class="hidden">
             </label>
             <p id="adminFileSummary" class="mt-2 text-xs text-slate-500 hidden"></p>
         </div>
@@ -473,15 +570,21 @@ include 'components/layout_start.php';
     </div>
 </div>
 
-<form method="POST" id="bulkForm">
+<!-- El formulario de aprobacion masiva vive fuera de la lista: los <form> de
+     cada fila iban anidados aqui dentro y el navegador los descartaba. -->
+<form method="POST" id="bulkForm" class="hidden" onsubmit="return confirm('Aprobar las facturas seleccionadas?')">
+    <?= csrfField() ?>
     <input type="hidden" name="action" value="bulk_approve">
+</form>
+
+<div id="bulkList">
     <div class="surface-card overflow-hidden">
         <div class="px-5 py-3 border-b border-stone-100 flex items-center gap-3">
             <h3 class="text-sm font-bold text-slate-900">Facturas IA</h3>
             <span class="text-xs text-slate-400"><?= count($rows) ?> resultado(s)</span>
             <div class="ml-auto flex items-center gap-2">
                 <span class="text-[11px] text-slate-500 hidden sm:inline">Seleccionadas: <span id="selCount">0</span></span>
-                <button type="submit" id="bulkBtn" disabled class="btn-dark text-xs opacity-50 cursor-not-allowed">Aprobar seleccionadas</button>
+                <button type="submit" form="bulkForm" id="bulkBtn" disabled class="btn-dark text-xs opacity-50 cursor-not-allowed">Aprobar seleccionadas</button>
             </div>
         </div>
 
@@ -496,8 +599,13 @@ include 'components/layout_start.php';
         <?php else: ?>
         <div class="divide-y divide-stone-100" id="invoiceList">
             <?php foreach ($rows as $r):
-                $thumbHref = 'uploads/invoices/' . htmlspecialchars($r['filename']);
+                $thumbHref = 'serve_invoice.php?id=' . (int)$r['upload_id'];
                 $isApproved = !empty($r['approved']);
+                // Reprocesar una factura ya aprobada la saca del 606/607 y hay
+                // que volver a aprobarla: se avisa antes de hacerlo.
+                $reprocessConfirm = $isApproved
+                    ? ' onsubmit="return confirm(\'Esta factura ya esta aprobada. Reprocesarla la saca del 606/607 y habra que aprobarla de nuevo. Continuar?\')"'
+                    : '';
                 $isImage = strpos($r['mime_type'], 'image/') === 0;
                 $confidence = (float)($r['confidence'] ?? 0);
                 $confPct = round($confidence * 100);
@@ -515,7 +623,8 @@ include 'components/layout_start.php';
                 $docTypeBadge = $r['doc_type']
                     ? ($r['doc_type'] === 'venta' ? '<span class="ir-pill ir-pill-blue">607 Venta</span>' : '<span class="ir-pill ir-pill-indigo">606 Compra</span>')
                     : '';
-                $clientLabel = $r['business_name'] ?: $r['client_name'];
+                // Un upload cuyo cliente ya no existe deja ambos campos en NULL.
+                $clientLabel = $r['business_name'] ?: ($r['client_name'] ?: 'Cliente eliminado');
             ?>
             <article class="ir-row group" data-row-id="<?= $rowId ?>">
                 <!-- Compact header always visible -->
@@ -585,7 +694,7 @@ include 'components/layout_start.php';
                     <div class="flex items-center gap-1.5 shrink-0">
                         <?php if (!$isApproved && $r['extraction_id']): ?>
                         <label class="ir-checkbox" title="Seleccionar para aprobar en lote">
-                            <input type="checkbox" name="ids[]" value="<?= (int)$r['extraction_id'] ?>" class="bulk-check">
+                            <input type="checkbox" form="bulkForm" name="ids[]" value="<?= (int)$r['extraction_id'] ?>" class="bulk-check">
                             <span></span>
                         </label>
                         <?php endif; ?>
@@ -597,7 +706,7 @@ include 'components/layout_start.php';
                         </button>
 
                         <?php if (!$isApproved): ?>
-                        <form method="POST" onsubmit="return confirm('Aprobar y agregar a 606/607?')" class="inline-flex">
+                        <form method="POST" onsubmit="return confirm('Aprobar y agregar a 606/607?')" class="inline-flex"><?= csrfField() ?>
                             <input type="hidden" name="action" value="approve">
                             <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
                             <button type="submit" class="ir-btn ir-btn-success">
@@ -606,7 +715,7 @@ include 'components/layout_start.php';
                             </button>
                         </form>
                         <?php else: ?>
-                        <form method="POST" onsubmit="return confirm('Revertir aprobacion?')" class="inline-flex">
+                        <form method="POST" onsubmit="return confirm('Revertir aprobacion?')" class="inline-flex"><?= csrfField() ?>
                             <input type="hidden" name="action" value="reject">
                             <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
                             <button type="submit" class="ir-btn ir-btn-ghost" title="Revertir aprobacion">
@@ -622,7 +731,7 @@ include 'components/layout_start.php';
                                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>
                             </button>
                             <div id="<?= $rowId ?>-menu" class="ir-menu hidden">
-                                <form method="POST">
+                                <form method="POST"<?= $reprocessConfirm ?>><?= csrfField() ?>
                                     <input type="hidden" name="action" value="reprocess">
                                     <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
                                     <button type="submit" class="ir-menu-item">
@@ -634,7 +743,7 @@ include 'components/layout_start.php';
                                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                     Ver imagen original
                                 </a>
-                                <form method="POST" onsubmit="return confirm('Eliminar esta factura para siempre?')">
+                                <form method="POST" onsubmit="return confirm('Eliminar esta factura para siempre?')"><?= csrfField() ?>
                                     <input type="hidden" name="action" value="delete_upload">
                                     <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
                                     <button type="submit" class="ir-menu-item ir-menu-item-danger">
@@ -660,7 +769,7 @@ include 'components/layout_start.php';
                             <span class="text-slate-600">Esta factura aun no ha sido procesada por la IA.</span>
                             <?php endif; ?>
                         </p>
-                        <form method="POST" class="ml-auto">
+                        <form method="POST" class="ml-auto"><?= csrfField() ?>
                             <input type="hidden" name="action" value="reprocess">
                             <input type="hidden" name="upload_id" value="<?= $r['upload_id'] ?>">
                             <button type="submit" class="ir-btn ir-btn-dark">
@@ -674,7 +783,7 @@ include 'components/layout_start.php';
 
                 <!-- Editable body (collapsible) -->
                 <div class="ir-body hidden" id="<?= $rowId ?>-body">
-                    <form method="POST" class="ir-form">
+                    <form method="POST" class="ir-form"><?= csrfField() ?>
                         <input type="hidden" name="action" value="update_extraction">
                         <input type="hidden" name="extraction_id" value="<?= (int)$r['extraction_id'] ?>">
 
@@ -825,7 +934,7 @@ include 'components/layout_start.php';
         </div>
         <?php endif; ?>
     </div>
-</form>
+</div>
 
 <style>
     /* === Invoice Review compact list === */
@@ -911,12 +1020,12 @@ include 'components/layout_start.php';
 <script>
 // Bulk selection
 (function() {
-    const form = document.getElementById('bulkForm');
     const btn = document.getElementById('bulkBtn');
     const counter = document.getElementById('selCount');
+    if (!btn || !counter) return;
 
     function refresh() {
-        const checks = form.querySelectorAll('.bulk-check:checked');
+        const checks = document.querySelectorAll('.bulk-check:checked');
         counter.textContent = checks.length;
         if (checks.length > 0) {
             btn.disabled = false;
@@ -926,7 +1035,10 @@ include 'components/layout_start.php';
             btn.classList.add('opacity-50','cursor-not-allowed');
         }
     }
-    form.addEventListener('change', refresh);
+    // Delegado en document: las casillas ya no cuelgan del <form> del bulk.
+    document.addEventListener('change', function(e){
+        if (e.target && e.target.classList && e.target.classList.contains('bulk-check')) refresh();
+    });
     refresh();
 })();
 

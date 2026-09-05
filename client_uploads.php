@@ -5,6 +5,14 @@ requireAuth('client');
 $client_id = (int)$_SESSION['user_id'];
 $success = $error = null;
 
+// Flash del ciclo anterior (patron POST-Redirect-GET): sin esto, refrescar la
+// pagina despues de subir reenviaba el formulario entero.
+if (!empty($_SESSION['cu_flash'])) {
+    $success = $_SESSION['cu_flash']['success'] ?? null;
+    $error   = $_SESSION['cu_flash']['error'] ?? null;
+    unset($_SESSION['cu_flash']);
+}
+
 $period = $_GET['period'] ?? date('Y-m');
 if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) $period = date('Y-m');
 
@@ -13,11 +21,44 @@ $periodLabel = $months[(int)substr($period, 5, 2) - 1] . ' ' . substr($period, 0
 $prevPeriod = date('Y-m', strtotime($period . '-01 -1 month'));
 $nextPeriod = date('Y-m', strtotime($period . '-01 +1 month'));
 
+/** Guarda el mensaje y redirige al mismo periodo (evita el reenvio del POST). */
+function cuRedirect($success = null, $error = null) {
+    global $period;
+    $_SESSION['cu_flash'] = ['success' => $success, 'error' => $error];
+    header('Location: client_uploads.php?period=' . urlencode($period));
+    exit;
+}
+
+// Si el navegador manda mas bytes de los que permite post_max_size, PHP vacia
+// $_POST y $_FILES: el handler no entraba y la pagina recargaba en blanco, sin
+// decir nada. Cuatro fotos de 12 MB bastaban para provocarlo.
+$postTooLarge = $_SERVER['REQUEST_METHOD'] === 'POST'
+    && empty($_POST)
+    && empty($_FILES)
+    && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0;
+if ($postTooLarge) {
+    $limit = ini_get('post_max_size');
+    cuRedirect(null, "Los archivos superan el limite del servidor ({$limit} en total). Subelas en tandas mas pequenas.");
+}
+
 // Upload via PWA Share Target -> tratarlo como upload normal
 $isShareTarget = ($_GET['via'] ?? '') === 'share';
 if ($isShareTarget && $_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_FILES['files']['name'][0])) {
+    // El Share Target lo dispara el sistema operativo, no nuestro formulario,
+    // asi que es imposible que traiga el token CSRF. En su lugar comprobamos
+    // Sec-Fetch-Site: el navegador lo marca como cross-site cuando el POST
+    // viene de la pagina de otro, que es justo el ataque que nos preocupa.
+    $fetchSite = strtolower($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '');
+    if ($fetchSite === 'cross-site') {
+        cuRedirect(null, 'Origen no permitido.');
+    }
     $_POST['action'] = 'upload';
     if (empty($_POST['doc_type'])) $_POST['doc_type'] = 'auto';
+    $_POST['csrf_token'] = csrfToken();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrf();
 }
 
 // Upload handler
@@ -26,100 +67,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
     if (!in_array($docTypeHint, ['auto','compra','venta'], true)) $docTypeHint = 'auto';
 
     if (empty($_FILES['files']['name'][0])) {
-        $error = 'Selecciona al menos una foto de factura.';
+        cuRedirect(null, 'Selecciona al menos una foto de factura.');
+    }
+
+    $maxMb = (int)getSetting('openai_max_size_mb', '12');
+    $maxBytes = max(1, $maxMb) * 1024 * 1024;
+    $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
+
+    $uploadedOk = 0;
+    $failed = [];
+    $files = $_FILES['files'];
+    $n = count($files['name']);
+    $dir = aiUploadsDir();
+
+    for ($i = 0; $i < $n; $i++) {
+        $orig = (string)$files['name'][$i];
+        if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+            $failed[] = $orig . ' (' . aiUploadErrorText((int)$files['error'][$i]) . ')';
+            continue;
+        }
+        $tmp = (string)$files['tmp_name'][$i];
+        if (!is_uploaded_file($tmp)) {
+            $failed[] = $orig . ' (subida invalida)';
+            continue;
+        }
+
+        // Verificacion real del archivo: MIME por magic bytes y extension
+        // derivada de ese MIME. El Content-Type que manda el navegador es
+        // falsificable y ya no se usa para decidir nada.
+        $check = aiInspectUploadedFile($tmp, $maxBytes);
+        if (isset($check['error'])) {
+            $failed[] = $orig . ' (' . $check['error'] . ')';
+            continue;
+        }
+
+        // Pre-check duplicate via in-memory sha256
+        $tmpSha = @hash_file('sha256', $tmp);
+        if ($tmpSha && aiFindDuplicateUpload($client_id, $tmpSha) > 0) {
+            $failed[] = $orig . ' (duplicada, ya la habias subido)';
+            continue;
+        }
+
+        if ($autoProcess && !aiCheckUploadRateLimit($client_id)) {
+            $failed[] = $orig . ' (llegaste al limite de facturas por hora, intenta mas tarde)';
+            continue;
+        }
+
+        $filename = aiBuildStoredFilename($client_id, $check['ext']);
+        $dest = $dir . '/' . $filename;
+        if (!move_uploaded_file($tmp, $dest)) {
+            $failed[] = $orig . ' (' . aiStoreFailureReason($dir) . ')';
+            continue;
+        }
+        @chmod($dest, 0644);
+
+        $sha = hash_file('sha256', $dest);
+
+        $uploadId = aiCreateUploadRecord($client_id, [
+            'filename'      => $filename,
+            'original_name' => mb_substr($orig, 0, 240),
+            'mime_type'     => $check['mime'],
+            'file_size'     => $check['size'],
+            'sha256'        => $sha,
+        ], $docTypeHint, $client_id);
+
+        if ($autoProcess) {
+            $res = aiProcessUpload($uploadId);
+            if (!$res['ok']) {
+                $failed[] = $orig . ' (' . $res['error'] . ')';
+            }
+        }
+
+        $uploadedOk++;
+    }
+    if ($uploadedOk > 0) {
+        logClientActivity($client_id, 'invoice_upload', "{$uploadedOk} factura(s) subida(s) desde el portal");
+    }
+
+    if ($uploadedOk > 0 && empty($failed)) {
+        cuRedirect("{$uploadedOk} factura(s) subida(s) y procesada(s).");
+    } elseif ($uploadedOk > 0) {
+        cuRedirect("{$uploadedOk} subida(s). Con errores: " . implode(', ', $failed));
     } else {
-        $maxMb = (int)getSetting('openai_max_size_mb', '12');
-        $maxBytes = max(1, $maxMb) * 1024 * 1024;
-        $autoProcess = getSetting('openai_auto_process', '1') === '1' && getSetting('openai_enabled', '1') === '1';
-
-        $uploadedOk = 0;
-        $failed = [];
-        $files = $_FILES['files'];
-        $n = count($files['name']);
-        $dir = aiUploadsDir();
-
-        for ($i = 0; $i < $n; $i++) {
-            if ($files['error'][$i] !== UPLOAD_ERR_OK) {
-                $failed[] = $files['name'][$i] . ' (error de subida)';
-                continue;
-            }
-            $size = (int)$files['size'][$i];
-            $mime = (string)$files['type'][$i];
-            $orig = (string)$files['name'][$i];
-            $tmp  = (string)$files['tmp_name'][$i];
-
-            if (!in_array($mime, aiAcceptedMimes(), true)) {
-                // Try to fix via getimagesize for images that arrive as application/octet-stream
-                $info = @getimagesize($tmp);
-                if ($info && !empty($info['mime'])) $mime = $info['mime'];
-                elseif (strtolower(pathinfo($orig, PATHINFO_EXTENSION)) === 'pdf') $mime = 'application/pdf';
-            }
-            if (!in_array($mime, aiAcceptedMimes(), true)) {
-                $failed[] = $orig . ' (formato no permitido, sube JPG/PNG/WEBP o PDF)';
-                continue;
-            }
-            if ($size > $maxBytes) {
-                $failed[] = $orig . " (excede {$maxMb} MB)";
-                continue;
-            }
-
-            // Pre-check duplicate via in-memory sha256
-            $tmpSha = @hash_file('sha256', $tmp);
-            if ($tmpSha && aiFindDuplicateUpload($client_id, $tmpSha) > 0) {
-                $failed[] = $orig . ' (duplicada, ya la habias subido)';
-                continue;
-            }
-
-            $ext = pathinfo($orig, PATHINFO_EXTENSION) ?: 'jpg';
-            $filename = 'inv_' . $client_id . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . strtolower($ext);
-            $dest = $dir . '/' . $filename;
-            if (!move_uploaded_file($tmp, $dest)) {
-                $failed[] = $orig . ' (no se pudo guardar)';
-                continue;
-            }
-
-            $sha = hash_file('sha256', $dest);
-
-            $uploadId = aiCreateUploadRecord($client_id, [
-                'filename'      => $filename,
-                'original_name' => $orig,
-                'mime_type'     => $mime,
-                'file_size'     => $size,
-                'sha256'        => $sha,
-            ], $docTypeHint, $client_id);
-
-            if ($autoProcess) {
-                $res = aiProcessUpload($uploadId);
-                if (!$res['ok']) {
-                    $failed[] = $orig . ' (' . $res['error'] . ')';
-                }
-            }
-
-            $uploadedOk++;
-        }
-        if ($uploadedOk > 0) {
-            logClientActivity($client_id, 'invoice_upload', "{$uploadedOk} factura(s) subida(s) desde el portal");
-        }
-
-        if ($uploadedOk > 0 && empty($failed)) {
-            $success = "{$uploadedOk} factura(s) subida(s) y procesada(s).";
-        } elseif ($uploadedOk > 0) {
-            $success = "{$uploadedOk} subida(s). Con errores: " . implode(', ', $failed);
-        } else {
-            $error = 'No se pudo subir: ' . implode(', ', $failed);
-        }
+        cuRedirect(null, 'No se pudo subir: ' . implode(', ', $failed));
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reprocess') {
     $uid = (int)($_POST['upload_id'] ?? 0);
     if ($uid) {
-        $own = $pdo->prepare("SELECT id FROM invoice_uploads WHERE id=? AND client_id=?");
+        $own = $pdo->prepare("SELECT status FROM invoice_uploads WHERE id=? AND client_id=?");
         $own->execute([$uid, $client_id]);
-        if ($own->fetchColumn()) {
-            $res = aiProcessUpload($uid);
-            $success = $res['ok'] ? 'Factura reprocesada.' : ('Error al reprocesar: ' . ($res['error'] ?? ''));
-            if (!$res['ok']) { $error = $success; $success = null; }
+        $status = $own->fetchColumn();
+        if ($status === false) {
+            cuRedirect(null, 'Factura no encontrada.');
         }
+        // Reprocesar una aprobada la sacaria del 606/607 ya armado.
+        if ($status === 'approved') {
+            cuRedirect(null, 'Esa factura ya fue aprobada por el equipo. Pide a tu asesor que la revise.');
+        }
+        if (!aiCheckUploadRateLimit($client_id)) {
+            cuRedirect(null, 'Llegaste al limite de procesamientos por hora. Intenta mas tarde.');
+        }
+        $res = aiProcessUpload($uid);
+        if ($res['ok']) {
+            cuRedirect('Factura reprocesada.');
+        }
+        cuRedirect(null, 'Error al reprocesar: ' . ($res['error'] ?? ''));
     }
+    cuRedirect();
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_upload') {
     $uid = (int)($_POST['upload_id'] ?? 0);
     if ($uid) {
@@ -127,14 +181,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
         $u->execute([$uid, $client_id]);
         $row = $u->fetch();
         if ($row && $row['status'] !== 'approved') {
-            @unlink(aiUploadsDir() . '/' . $row['filename']);
+            @unlink(aiUploadsDir() . '/' . basename($row['filename']));
             $pdo->prepare("DELETE FROM invoice_extractions WHERE upload_id=?")->execute([$uid]);
             $pdo->prepare("DELETE FROM invoice_uploads WHERE id=?")->execute([$uid]);
-            $success = 'Factura eliminada.';
-        } else {
-            $error = 'Esa factura ya fue aprobada por el equipo, no se puede eliminar.';
+            cuRedirect('Factura eliminada.');
         }
+        cuRedirect(null, 'Esa factura ya fue aprobada por el equipo, no se puede eliminar.');
     }
+    cuRedirect();
 }
 
 // Fetch all uploads for this client, ordered by date
@@ -236,7 +290,7 @@ include 'components/layout_start.php';
             <h3 class="cu-upload-title">Sube tus facturas</h3>
             <p class="cu-upload-desc">Toma una foto a tu factura o suelta el archivo aqui. Extraemos RNC, NCF, ITBIS y total automaticamente.</p>
             <div class="cu-upload-pills">
-                <span class="cu-mini-pill">JPG · PNG · WEBP · HEIC · PDF</span>
+                <span class="cu-mini-pill">JPG · PNG · WEBP · PDF</span>
                 <span class="cu-mini-pill">Multiple a la vez</span>
                 <span class="cu-mini-pill">Hasta <?= htmlspecialchars(getSetting('openai_max_size_mb', '12')) ?>MB c/u</span>
             </div>
@@ -244,10 +298,11 @@ include 'components/layout_start.php';
     </div>
 
     <form method="POST" enctype="multipart/form-data" id="uploadForm" class="cu-upload-form">
+        <?= csrfField() ?>
         <input type="hidden" name="action" value="upload">
 
         <label class="cu-dropzone" id="dropZone">
-            <input type="file" name="files[]" id="fileInput" accept="image/*,application/pdf,.pdf" multiple class="hidden">
+            <input type="file" name="files[]" id="fileInput" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.pdf" multiple class="hidden">
             <div class="cu-dropzone-icon">
                 <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
             </div>
@@ -319,7 +374,7 @@ include 'components/layout_start.php';
             $docTypePill = '';
             if ($u['ai_doc_type'] === 'venta') $docTypePill = '<span class="cu-pill cu-pill-blue">607 Venta</span>';
             elseif ($u['ai_doc_type'] === 'compra') $docTypePill = '<span class="cu-pill cu-pill-indigo">606 Compra</span>';
-            $thumbHref = 'uploads/invoices/' . htmlspecialchars($u['filename']);
+            $thumbHref = 'serve_invoice.php?id=' . (int)$u['id'];
             $isImage = strpos($u['mime_type'], 'image/') === 0;
             $confidence = (float)($u['confidence'] ?? 0);
             $confPct = round($confidence * 100);
@@ -369,6 +424,7 @@ include 'components/layout_start.php';
             <div class="cu-row-actions">
                 <?php if (in_array($u['status'], ['error','extracted'], true)): ?>
                 <form method="POST" class="inline-flex">
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="reprocess">
                     <input type="hidden" name="upload_id" value="<?= $u['id'] ?>">
                     <button type="submit" class="cu-action-btn cu-action-btn-blue" title="Reprocesar">
@@ -378,6 +434,7 @@ include 'components/layout_start.php';
                 <?php endif; ?>
                 <?php if ($u['status'] !== 'approved'): ?>
                 <form method="POST" class="inline-flex" onsubmit="return confirm('Eliminar esta factura?')">
+                    <?= csrfField() ?>
                     <input type="hidden" name="action" value="delete_upload">
                     <input type="hidden" name="upload_id" value="<?= $u['id'] ?>">
                     <button type="submit" class="cu-action-btn cu-action-btn-red" title="Eliminar">
@@ -549,7 +606,22 @@ include 'components/layout_start.php';
         }
     });
 
-    form.addEventListener('submit', function(){
+    // Tope real del servidor (post_max_size). Avisamos antes de enviar en vez
+    // de dejar que PHP descarte el POST entero y la pagina recargue sin nada.
+    const POST_MAX = <?= (int)aiPostMaxBytes() ?>;
+    const POST_MAX_LABEL = '<?= htmlspecialchars(ini_get('post_max_size'), ENT_QUOTES) ?>';
+
+    form.addEventListener('submit', function(e){
+        if (POST_MAX > 0 && input.files && input.files.length > 0) {
+            let total = 0;
+            for (const f of input.files) total += f.size;
+            // 2% de margen para las cabeceras del multipart.
+            if (total > POST_MAX * 0.98) {
+                e.preventDefault();
+                alert('Seleccionaste ' + Math.round(total / 1048576) + ' MB y el servidor acepta hasta ' + POST_MAX_LABEL + ' por envio.\nSubelas en tandas mas pequenas.');
+                return;
+            }
+        }
         if (input.files && input.files.length > 0) {
             btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity=".25"/><path d="M22 12a10 10 0 01-10 10" stroke="currentColor" stroke-width="3" fill="none"/></svg> Procesando…';
             btn.disabled = true;

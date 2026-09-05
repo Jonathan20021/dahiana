@@ -210,9 +210,24 @@ function bootstrapAiInvoiceSchema() {
             'telegram_bot_token' => '',
             'telegram_bot_username' => '',
             'telegram_webhook_secret' => bin2hex(random_bytes(8)),
+            // Tope de llamadas a la IA por usuario y hora. Cada subida y cada
+            // reproceso consume creditos de OpenAI/Anthropic, y el boton de
+            // reprocesar no tenia freno.
+            'ai_max_calls_per_hour' => '60',
         ];
         $seed = $pdo->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES (?, ?)");
         foreach ($defaults as $k => $v) $seed->execute([$k, $v]);
+
+        // Cubo de rate limit para el portal web. No se reusa telegram_state
+        // porque su PK es el chat_id de Telegram y los espacios de ids podrian
+        // chocar.
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS ai_rate_limits (
+                bucket_key VARCHAR(64) PRIMARY KEY,
+                hits_json TEXT DEFAULT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        ");
 
         // Ensure 'IT-1' is allowed in tax_filings (uses VARCHAR(10), already fits).
         // Ensure 608 filing rows can carry the optional fields we already use.
@@ -371,21 +386,328 @@ function aiCheckRateLimit($key, $maxPerHour = 30) {
     }
 }
 
+/**
+ * Rate limit del portal web (subida y reproceso). Cada llamada gasta creditos
+ * de OpenAI/Anthropic y el boton "Reprocesar" se podia pulsar en bucle sin
+ * ningun freno. Ventana deslizante de 1 hora por usuario.
+ *
+ * Devuelve true si la accion esta permitida. Fail-open ante error de DB: es
+ * preferible cobrar de mas que bloquear a un cliente por un fallo nuestro.
+ */
+function aiCheckUploadRateLimit($userId, $maxPerHour = null, $cost = 1) {
+    global $pdo;
+    if ($maxPerHour === null) $maxPerHour = (int)getSetting('ai_max_calls_per_hour', '60');
+    if ($maxPerHour <= 0) return true; // 0 = sin limite
+    $key = 'web:' . (int)$userId;
+    try {
+        $stmt = $pdo->prepare("SELECT hits_json FROM ai_rate_limits WHERE bucket_key = ?");
+        $stmt->execute([$key]);
+        $raw  = $stmt->fetchColumn();
+        $hits = $raw ? (json_decode($raw, true) ?: []) : [];
+        $now  = time();
+        $hits = array_values(array_filter($hits, fn($ts) => $now - (int)$ts < 3600));
+        if (count($hits) + $cost > $maxPerHour) return false;
+        for ($i = 0; $i < max(1, (int)$cost); $i++) $hits[] = $now;
+        $up = $pdo->prepare("INSERT INTO ai_rate_limits (bucket_key, hits_json) VALUES (?, ?)
+                             ON DUPLICATE KEY UPDATE hits_json = VALUES(hits_json)");
+        $up->execute([$key, json_encode($hits)]);
+        return true;
+    } catch (PDOException $e) {
+        return true;
+    }
+}
+
+/**
+ * Tope para staff. Un contable que sube el lote del mes de un cliente hace
+ * muchas mas llamadas que el cliente desde su telefono, asi que se le da 5x el
+ * cupo configurado. Sigue siendo un freno ante un bucle accidental.
+ */
+function aiStaffRateLimit() {
+    return max(1, (int)getSetting('ai_max_calls_per_hour', '60')) * 5;
+}
+
 // --------------------------------------------------------------------------
 // File helpers
 // --------------------------------------------------------------------------
+
+/**
+ * Directorio de facturas. Se blinda en cada llamada: el directorio vive bajo el
+ * docroot y `uploads/` esta en .gitignore, asi que en produccion nace vacio y
+ * sin proteccion. Sin el .htaccess cualquiera podia listar/leer las facturas de
+ * todos los clientes (RNC, NCF, montos) sin estar logueado.
+ */
 function aiUploadsDir() {
     $dir = __DIR__ . '/../uploads/invoices';
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    aiHardenUploadsDir($dir);
     return $dir;
 }
 
+/**
+ * Escribe el .htaccess de bloqueo si falta. Deniega el acceso directo (los
+ * archivos se sirven por serve_invoice.php, que valida sesion y dueno) y apaga
+ * cualquier motor de scripting por si se colara un archivo ejecutable.
+ */
+function aiHardenUploadsDir($dir) {
+    aiHardenUploadsRoot(dirname($dir));
+
+    $htaccess = $dir . '/.htaccess';
+    if (is_file($htaccess)) return;
+    @file_put_contents($htaccess, <<<HTA
+# Generado automaticamente. Las facturas se sirven por serve_invoice.php,
+# que valida la sesion y el dueno del archivo. Acceso directo denegado.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
+
+Options -Indexes -ExecCGI
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .py
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php5.c>
+    php_flag engine off
+</IfModule>
+HTA);
+}
+
+/**
+ * Blindaje del directorio `uploads/` padre. Ahi viven los documentos de otros
+ * modulos (admin_documents.php, request_view.php) que SI se enlazan por URL
+ * directa, asi que no se puede denegar el acceso a los archivos sin romperlos.
+ * Lo que si se corta es lo que no rompe nada y hoy esta abierto:
+ *   - el listado del directorio (Apache lo servia con Options Indexes: se veian
+ *     los nombres de todos los documentos de los clientes),
+ *   - la ejecucion de scripts,
+ *   - los .log del bot y del cron, que ahi dentro eran publicos.
+ */
+function aiHardenUploadsRoot($dir) {
+    $htaccess = $dir . '/.htaccess';
+    if (!is_dir($dir) || is_file($htaccess)) return;
+    @file_put_contents($htaccess, <<<HTA
+# Generado automaticamente. No deniega los archivos: otros modulos los enlazan
+# por URL directa. Solo cierra el listado, la ejecucion y los logs.
+Options -Indexes -ExecCGI
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .py
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php5.c>
+    php_flag engine off
+</IfModule>
+
+<FilesMatch "\.(log|key|ini|sql|bak)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+HTA);
+}
+
+/**
+ * Mimes que aceptamos de verdad: los que al menos uno de los dos proveedores
+ * de vision sabe leer. HEIC/HEIF quedaron fuera a proposito -- OpenAI no los
+ * acepta y aiAnthropicSupports() tampoco, asi que antes se guardaban en disco
+ * para terminar siempre en status 'error'. Ahora se rechazan al subir con un
+ * mensaje que dice que hacer.
+ */
 function aiAcceptedMimes() {
-    return ['image/jpeg','image/png','image/webp','image/gif','image/heic','image/heif','application/pdf'];
+    return ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
 }
 
 function aiIsImageMime($mime) {
     return strpos((string)$mime, 'image/') === 0;
+}
+
+/**
+ * Extension de disco derivada del MIME verificado, NUNCA del nombre original.
+ * Guardar `factura.php` con su extension dentro del docroot era ejecucion
+ * remota de codigo: el cliente veia la URL exacta del archivo en su propio
+ * listado de facturas.
+ */
+function aiExtensionForMime($mime) {
+    $map = [
+        'image/jpeg'      => 'jpg',
+        'image/png'       => 'png',
+        'image/webp'      => 'webp',
+        'image/gif'       => 'gif',
+        'application/pdf' => 'pdf',
+    ];
+    return $map[strtolower(trim((string)$mime))] ?? null;
+}
+
+/**
+ * Detecta HEIC/HEIF por magic bytes. finfo no siempre los reconoce (depende de
+ * la version de la magic db) y suele devolver application/octet-stream, asi
+ * que el aviso al usuario se perdia.
+ */
+function aiLooksLikeHeic($absPath) {
+    $fh = @fopen($absPath, 'rb');
+    if (!$fh) return false;
+    $head = fread($fh, 12);
+    fclose($fh);
+    if (strlen($head) < 12 || substr($head, 4, 4) !== 'ftyp') return false;
+    return in_array(substr($head, 8, 4), ['heic','heix','hevc','hevx','heim','heis','hevm','hevs','mif1','msf1'], true);
+}
+
+/**
+ * Unica fuente de verdad para validar un archivo subido.
+ *
+ * El $_FILES[...]['type'] del navegador es la cabecera Content-Type del
+ * multipart y la controla el cliente: mandando `image/jpeg` para un .php se
+ * saltaba la validacion entera. Aqui el MIME sale de los magic bytes (finfo) y
+ * la extension del MIME, no del nombre.
+ *
+ * Devuelve ['mime'=>..., 'ext'=>..., 'size'=>...] o ['error'=>'mensaje al usuario'].
+ */
+function aiInspectUploadedFile($absPath, $maxBytes = 0) {
+    if (!is_file($absPath)) {
+        return ['error' => 'no se pudo leer el archivo'];
+    }
+    $size = (int)@filesize($absPath);
+    if ($size <= 0) {
+        return ['error' => 'archivo vacio'];
+    }
+    if ($maxBytes > 0 && $size > $maxBytes) {
+        return ['error' => 'excede ' . round($maxBytes / 1048576) . ' MB'];
+    }
+
+    $mime = '';
+    if (function_exists('finfo_open')) {
+        $fi = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($fi) {
+            $mime = (string)@finfo_file($fi, $absPath);
+            finfo_close($fi);
+        }
+    }
+    // Segunda opinion para imagenes: getimagesize es mas tolerante que finfo
+    // con JPEG raros de camara.
+    if (!aiExtensionForMime($mime)) {
+        $info = @getimagesize($absPath);
+        if ($info && !empty($info['mime'])) $mime = (string)$info['mime'];
+    }
+
+    if (!aiExtensionForMime($mime)) {
+        if (aiLooksLikeHeic($absPath)) {
+            return ['error' => 'es HEIC de iPhone. En Ajustes > Camara > Formatos elige "Mas compatible", o compartela como JPG'];
+        }
+        return ['error' => 'formato no permitido, sube JPG, PNG, WEBP o PDF'];
+    }
+
+    return ['mime' => $mime, 'ext' => aiExtensionForMime($mime), 'size' => $size];
+}
+
+/**
+ * post_max_size en bytes. ini_get devuelve cadenas tipo "40M" / "8M" / "1G",
+ * y "0" significa sin limite.
+ */
+function aiPostMaxBytes() {
+    $raw = trim((string)ini_get('post_max_size'));
+    if ($raw === '' || $raw === '0' || $raw === '-1') return 0;
+    $unit = strtolower(substr($raw, -1));
+    $num  = (float)$raw;
+    switch ($unit) {
+        case 'g': return (int)($num * 1024 * 1024 * 1024);
+        case 'm': return (int)($num * 1024 * 1024);
+        case 'k': return (int)($num * 1024);
+        default:  return (int)$num;
+    }
+}
+
+/**
+ * Explica por que fallo escribir el archivo en disco.
+ *
+ * move_uploaded_file() devuelve false y no dice nada mas, asi que el usuario
+ * solo veia "(no guardado)": no distingue entre el directorio que no existe,
+ * los permisos del usuario de PHP y el disco (o la cuota del hosting) lleno,
+ * que son tres arreglos completamente distintos.
+ */
+function aiStoreFailureReason($dir) {
+    if (!is_dir($dir)) {
+        return 'el directorio de facturas no existe en el servidor y no se pudo crear';
+    }
+    // La prueba real es escribir: is_writable() se equivoca con ACLs, con
+    // Windows y con las cuotas de disco de los hostings compartidos.
+    $probe = $dir . '/.w_' . bin2hex(random_bytes(4));
+    if (@file_put_contents($probe, str_repeat('x', 1024)) === false) {
+        @unlink($probe);
+        return 'el servidor no puede escribir en uploads/invoices (permisos o cuota de disco agotada)';
+    }
+    @unlink($probe);
+
+    $free = @disk_free_space($dir);
+    if ($free !== false && $free < 50 * 1024 * 1024) {
+        return 'el disco del servidor esta casi lleno (' . round($free / 1048576) . ' MB libres)';
+    }
+    return 'el servidor no pudo guardar el archivo; revisa permisos de uploads/invoices y el espacio en disco';
+}
+
+/**
+ * Traduce el codigo de $_FILES[...]['error'] a algo que el cliente entienda.
+ * Antes todos los casos se mostraban como "error de subida" y el mas comun
+ * (el archivo pasa upload_max_filesize) quedaba sin explicacion.
+ */
+function aiUploadErrorText($code) {
+    switch ($code) {
+        case UPLOAD_ERR_INI_SIZE:
+        case UPLOAD_ERR_FORM_SIZE:
+            return 'pesa mas de lo que permite el servidor (' . ini_get('upload_max_filesize') . ')';
+        case UPLOAD_ERR_PARTIAL:
+            return 'la subida se corto a medias, reintenta';
+        case UPLOAD_ERR_NO_FILE:
+            return 'no se recibio el archivo';
+        case UPLOAD_ERR_NO_TMP_DIR:
+        case UPLOAD_ERR_CANT_WRITE:
+            return 'el servidor no pudo guardarla, avisa a tu asesor';
+        case UPLOAD_ERR_EXTENSION:
+            return 'bloqueada por el servidor';
+        default:
+            return 'error de subida';
+    }
+}
+
+/**
+ * Nombre de archivo de destino. La extension viene del MIME ya verificado.
+ */
+function aiBuildStoredFilename($clientId, $ext, $tag = '') {
+    $ext = preg_replace('/[^a-z0-9]/', '', strtolower((string)$ext));
+    // Lista blanca cerrada, no solo saneo de caracteres: aunque un llamador
+    // futuro pase la extension equivocada, aqui nunca sale un nombre que el
+    // servidor pueda ejecutar.
+    if (!in_array($ext, ['jpg','png','webp','gif','pdf'], true)) $ext = 'bin';
+    $tag = preg_replace('/[^a-z0-9]/', '', strtolower((string)$tag));
+    return 'inv_' . (int)$clientId . ($tag !== '' ? '_' . $tag : '') . '_'
+         . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+}
+
+/**
+ * True si el usuario en sesion puede ver el archivo de este upload.
+ * El cliente solo ve lo suyo; el staff, lo que le permitan sus asignaciones.
+ */
+function aiCanViewUpload(array $upload, $userId = null, $role = null) {
+    if ($userId === null) $userId = (int)($_SESSION['user_id'] ?? 0);
+    if ($role === null)   $role   = (string)($_SESSION['role'] ?? '');
+    if ($userId <= 0) return false;
+    if (getRoleAccessLevel($role) === 'admin') {
+        return function_exists('clientAccessibleByUser')
+            ? clientAccessibleByUser((int)$upload['client_id'], $userId)
+            : true;
+    }
+    return (int)$upload['client_id'] === $userId;
 }
 
 /**
@@ -402,6 +724,9 @@ function aiFileToDataUrl($absPath, $mime) {
         return ['error' => 'No se pudo leer el archivo.'];
     }
     $b64 = base64_encode($bytes);
+    // Soltar el binario en cuanto esta codificado: entre el crudo, el base64 y
+    // el json_encode del payload un PDF de 12 MB llegaba a rondar los 100 MB.
+    unset($bytes);
     return ['data_url' => "data:{$mime};base64,{$b64}"];
 }
 
@@ -527,6 +852,7 @@ function aiExtractWithClaude($absPath, $mime, $hintBlock = '') {
     if ($bytes === false) return ['ok' => false, 'error' => 'no se pudo leer el archivo'];
 
     $b64 = base64_encode($bytes);
+    unset($bytes); // el binario ya no hace falta, ver aiFileToDataUrl()
     if ($mime === 'application/pdf') {
         $media = [
             'type'   => 'document',
@@ -864,7 +1190,7 @@ function aiExtractInvoiceFromFile($absPath, $mime, $clientHint = []) {
     // no se llama a ningun proveedor, tampoco al respaldo.
     if (!$cfg['enabled'])  return ['ok' => false, 'error' => 'IA deshabilitada en configuracion.'];
     if (!aiIsImageMime($mime) && $mime !== 'application/pdf') {
-        return ['ok' => false, 'error' => 'Formato no soportado. Sube una imagen (JPG, PNG, WEBP, HEIC) o un PDF.'];
+        return ['ok' => false, 'error' => 'Formato no soportado. Sube una imagen (JPG, PNG, WEBP) o un PDF.'];
     }
 
     $hintLines = [];
@@ -1277,6 +1603,28 @@ function aiCreateUploadRecord($clientId, $fileMeta, $docTypeHint = 'auto', $uplo
 }
 
 /**
+ * Borra las extracciones previas de un upload dejando la contabilidad limpia.
+ * Si alguna estaba aprobada, primero la revierte (saca su fila del 606/607 y
+ * recalcula el formulario y el IT-1) para no dejar filas huerfanas en la
+ * declaracion. Devuelve cuantas extracciones se eliminaron.
+ */
+function aiPurgeExtractionsForUpload($uploadId) {
+    global $pdo;
+    $sel = $pdo->prepare("SELECT id, filing_row_id FROM invoice_extractions WHERE upload_id=?");
+    $sel->execute([$uploadId]);
+    $rows = $sel->fetchAll();
+    foreach ($rows as $row) {
+        if (!empty($row['filing_row_id'])) {
+            aiRejectExtraction((int)$row['id']);
+        }
+    }
+    if ($rows) {
+        $pdo->prepare("DELETE FROM invoice_extractions WHERE upload_id=?")->execute([$uploadId]);
+    }
+    return count($rows);
+}
+
+/**
  * Process one upload: call OpenAI, persist extraction.
  * Returns ['ok' => bool, 'upload' => array|null, 'extraction' => array|null, 'error' => string|null]
  */
@@ -1300,6 +1648,14 @@ function aiProcessUpload($uploadId) {
     $client = $pdo->prepare("SELECT id, name, business_name, rnc, operation_type, economic_activity FROM users WHERE id = ?");
     $client->execute([$upload['client_id']]);
     $cli = $client->fetch() ?: [];
+
+    // Limpia la extraccion anterior antes de volver a extraer. Sin esto cada
+    // reproceso dejaba una fila mas en invoice_extractions (upload_id solo
+    // tiene INDEX, no UNIQUE): el LEFT JOIN del listado devolvia la factura
+    // duplicada y el resumen del periodo sumaba el ITBIS dos veces. Peor aun,
+    // si la anterior ya estaba aprobada su fila del 606/607 quedaba huerfana y
+    // al aprobar la nueva se insertaba el mismo NCF por segunda vez.
+    aiPurgeExtractionsForUpload($uploadId);
 
     $pdo->prepare("UPDATE invoice_uploads SET status='processing' WHERE id=?")->execute([$uploadId]);
 

@@ -24,6 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'login') {
             header('Location: login.php');
             exit;
         }
+        // Id de sesion nuevo al autenticar: si el atacante habia fijado el
+        // PHPSESSID del navegador de la victima, el suyo se queda sin valor.
+        session_regenerate_id(true);
+
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['role'] = $user['role'];
         $_SESSION['name'] = $user['name'];
@@ -37,6 +41,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'login') {
 }
 
 if ($action === 'logout') {
+    // session_destroy() por si solo deja $_SESSION cargado en esta peticion y
+    // la cookie viva en el navegador: se limpian las tres cosas.
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $p = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+    }
     session_destroy();
     header('Location: login.php');
     exit;

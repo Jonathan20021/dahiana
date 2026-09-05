@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Proteccion de archivos que no deben servirse por la web.
+#
+# El motivo: /.git/ estaba accesible y con eso se podia descargar el repositorio
+# completo, incluido config.php con las credenciales de la base de produccion.
+# Tambien quedaban expuestos database.sql, composer.* y, en cuanto se usa la
+# boveda, vault.key (la clave maestra que descifra las contrasenas de todos los
+# clientes).
+#
+# Requiere AllowOverride All en el vhost. Si el hosting no lo permite, hay que
+# aplicar el equivalente en la configuracion del servidor o, mejor, mover el
+# docroot a un subdirectorio public/.
+# ---------------------------------------------------------------------------
+
+# Sin listados de directorio
+Options -Indexes
+
+# --- Directorios y archivos ocultos (.git, .env, .vscode, .idea, .DS_Store) ---
+RedirectMatch 404 (?i)/\.(git|svn|hg|env|vscode|idea|ds_store|htpasswd)
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Cualquier ruta con un componente que empiece por punto
+    RewriteRule (^|/)\. - [F,L]
+</IfModule>
+
+# --- Archivos sensibles por nombre o extension ---
+<FilesMatch "(?i)^(vault\.key|composer\.(json|lock|phar)|package(-lock)?\.json|database\.sql|.*\.(sql|log|key|pem|bak|tmp|swp|dist|ini|md|sh|yml|yaml)|config\.local\.php|\.env.*)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# --- Cabeceras de seguridad basicas ---
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # La cookie de sesion nunca deberia salir en una respuesta cacheada
+    Header always set Cache-Control "no-store" "expr=%{REQUEST_URI} =~ m#\.php$#"
+</IfModule>

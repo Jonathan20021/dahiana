@@ -298,7 +298,7 @@ include 'components/layout_start.php';
         <?php else: ?>
         <ul class="space-y-2">
             <?php foreach ($recentInvoices as $r):
-                $thumbHref = 'uploads/invoices/' . htmlspecialchars($r['filename']);
+                $thumbHref = 'serve_invoice.php?id=' . (int)$r['id'];
                 $statusBadge = match($r['status']) {
                     'uploaded'   => '<span class="badge-dot badge-slate !text-[10px]">En cola</span>',
                     'processing' => '<span class="badge-dot badge-blue !text-[10px]">Procesando</span>',
