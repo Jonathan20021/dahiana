@@ -36,7 +36,10 @@ RedirectMatch 404 (?i)/\.(git|svn|hg|env|vscode|idea|ds_store|htpasswd)
 </IfModule>
 
 # --- Archivos sensibles por nombre o extension ---
-<FilesMatch "(?i)^(vault\.key|composer\.(json|lock|phar)|package(-lock)?\.json|database\.sql|.*\.(sql|log|key|pem|bak|tmp|swp|dist|ini|md|sh|yml|yaml)|config\.local\.php|\.env.*)$">
+# error_log es el log de PHP que el hosting deja en cada directorio, sin
+# extension, asi que *.log no lo cubria: trae rutas del servidor, nombres de
+# archivos subidos y, si falla la base, su usuario y su host.
+<FilesMatch "(?i)^(vault\.key|error_log|composer\.(json|lock|phar)|package(-lock)?\.json|database\.sql|.*\.(sql|log|key|pem|bak|tmp|swp|dist|ini|md|sh|yml|yaml)|config\.local\.php|\.env.*)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -63,4 +66,20 @@ RedirectMatch 404 (?i)/\.(git|svn|hg|env|vscode|idea|ds_store|htpasswd)
     # que ya distingue entre servir el archivo (cache privada de 10 minutos) y
     # responder 401/404 (sin cache).
     Header always set Cache-Control "no-store" "expr=%{REQUEST_URI} =~ m#\.php$# && %{REQUEST_URI} !~ m#/serve_invoice\.php$#"
+</IfModule>
+
+# --- Version de PHP del servidor (bloque de cPanel, MultiPHP Manager) ---
+# cPanel lo escribe al elegir la version de PHP del dominio. Va en git para que
+# el .htaccess del servidor sea igual al del repo y "Update from Remote" pueda
+# traer cambios de este archivo. Si se cambia la version en cPanel, hay que
+# copiar aqui el bloque nuevo antes del siguiente despliegue.
+# El IfModule lo limita a donde existe mod_lsapi (el servidor): en XAMPP ese
+# handler no existe y los .php se servirian como texto.
+<IfModule lsapi_module>
+# php -- BEGIN cPanel-generated handler, do not edit
+# Set the “ea-php82” package as the default “PHP” programming language.
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php82___lsphp .php .php8 .phtml
+</IfModule>
+# php -- END cPanel-generated handler, do not edit
 </IfModule>
