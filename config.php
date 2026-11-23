@@ -29,18 +29,44 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Database configuration
-define('DB_HOST', '129.121.81.172');
-define('DB_USER', 'neetjbte_dahiana');
-define('DB_PASS', 'Dahiana*2026');
-define('DB_NAME', 'neetjbte_dahiana');
+// ---------------------------------------------------------------------------
+// Base de datos. Las credenciales NO van en este archivo: el repositorio es
+// publico. Se leen del primero que exista de estos dos:
+//   - config.local.php, junto a este archivo (desarrollo; esta en .gitignore y
+//     el .htaccess lo bloquea). Plantilla en config.local.example.php.
+//   - ../.dahiana-config.php, un nivel por encima del docroot (servidor; fuera
+//     de la web, permisos 0600).
+// Los dos devuelven ['host' => ..., 'user' => ..., 'pass' => ..., 'name' => ...].
+// ---------------------------------------------------------------------------
+$dbConfig = null;
+foreach ([__DIR__ . '/config.local.php', dirname(__DIR__) . '/.dahiana-config.php'] as $dbConfigFile) {
+    if (is_file($dbConfigFile)) {
+        $dbConfig = require $dbConfigFile;
+        break;
+    }
+}
+if (!is_array($dbConfig) || empty($dbConfig['host']) || empty($dbConfig['user'])
+    || !isset($dbConfig['pass']) || empty($dbConfig['name'])) {
+    error_log('config.php: falta la configuracion de la base (config.local.php o ../.dahiana-config.php)');
+    http_response_code(500);
+    die('El portal no esta disponible en este momento.');
+}
+
+define('DB_HOST', (string)$dbConfig['host']);
+define('DB_USER', (string)$dbConfig['user']);
+define('DB_PASS', (string)$dbConfig['pass']);
+define('DB_NAME', (string)$dbConfig['name']);
+unset($dbConfig, $dbConfigFile);
 
 try {
     $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    die("Database connection failed: " . $e->getMessage());
+    // El mensaje de PDO trae usuario y host: al log, no a la pantalla.
+    error_log('config.php: no se pudo conectar a la base: ' . $e->getMessage());
+    http_response_code(500);
+    die('El portal no esta disponible en este momento.');
 }
 
 function bootstrapAccessControlSchema() {
